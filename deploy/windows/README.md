@@ -70,7 +70,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 
 10. **核对健康**：轮询 `/v1/health`，要求 `online`、`ready` 为真，`commit` 等于 tag 的 commit，`version` 等于 tag 中 `pyproject.toml` 的版本号（默认最多 300 秒）。不一致即失败并打印最近的日志。
 11. **恢复队列**：`POST /v1/queue/resume`。服务重启会丢失内存中的暂停状态，这里的 resume 是幂等的确认。
 
-脚本只等待正在运行的任务（票面要求）；暂停期间新提交的任务与已在排队的任务不会开始，服务重启后会被启动时的恢复逻辑标记为 `interrupted` / `failed_resumable`。要做到完全零影响，请在 `/v1/queue` 的 `length` 为 0 时部署。
+脚本只等待正在运行的任务，不等待排队中的任务。暂停期间调用方照常提交，任务保持 `queued`；服务重启后，启动时的恢复逻辑会按原提交顺序把它们重新放回队列，部署完成后自动开始。万一有某个排队任务无法恢复，只有这一个会变成可重试的 `failed`（错误码 `TASK_RESUME_FAILED`），其余任务不受影响。
 
 失败时 finally 分支会在服务可达时恢复队列；如果服务已停止，暂停状态随进程一起消失，服务下次启动自然是不暂停的。脚本会提示回滚命令，例如：
 
