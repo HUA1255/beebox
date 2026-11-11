@@ -1,0 +1,142 @@
+# Local Models
+
+BeeBox registers 25 local speech-recognition models plus 2 optional NeMo models. Model weights are downloaded on demand and are not included in the repository.
+
+## Storage
+
+Models live below the configured model storage root, normally `<data-root>/models/`. A development backend defaults to `<repository>/data/models/`; set `BEEBOX_DATA_DIR` to use another data root and `BEEBOX_MODEL_STORAGE_ROOT` to move models and framework caches elsewhere.
+
+Each model has its own directory:
+
+```text
+<model-storage-root>/models/<model-name>/
+```
+
+Model Management displays the resolved directory, per-model bytes, total model bytes, free/total filesystem capacity, and each model's supported inference devices. Actual size can exceed the catalog estimate because upstream repositories change and interrupted downloads can retain resumable cache files.
+
+### Offline model source
+
+Set `BEEBOX_MODEL_SOURCE_DIR` to a directory laid out as `<root>/<model-id>/` to download models by copying from that archive instead of the network. When an archive entry exists for a model it is the only source used, so a broken archive surfaces as a download error rather than silently falling back to an upstream hub. This is intended for air-gapped machines and for tests, which must not reach the network.
+
+## Catalog
+
+Sizes are registry estimates, not exact download promises.
+
+| Model id | Engine | Supported inference devices | Preferred source | Estimated size | Word timestamps |
+| --- | --- | --- | --- | ---: | --- |
+| `whisper-base` | Transformers Whisper | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | Hugging Face | 290 MB | No |
+| `whisper-small` | Transformers Whisper | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | Hugging Face | 967 MB | No |
+| `whisper-medium` | Transformers Whisper | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | Hugging Face | 3,060 MB | No |
+| `whisper-large-v3` | Transformers Whisper | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | Hugging Face | 6,200 MB | No |
+| `whisper-large-v3-turbo` | Transformers Whisper | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | Hugging Face | 1,600 MB | No |
+| `faster-whisper-base` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 145 MB | Yes |
+| `faster-whisper-small` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 466 MB | Yes |
+| `faster-whisper-medium` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 1,500 MB | Yes |
+| `faster-whisper-large-v3` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 3,100 MB | Yes |
+| `faster-whisper-large-v3-turbo` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 1,600 MB | Yes |
+| `mlx-whisper-turbo` | MLX Whisper | Apple GPU (MLX; Apple Silicon only) | ModelScope, then Hugging Face | 1,600 MB | Yes |
+| `sensevoice-small` | FunASR | CPU, NVIDIA GPU (CUDA) | ModelScope | 900 MB | No |
+| `paraformer-zh` | FunASR | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 850 MB | No |
+| `fun-asr-nano` | FunASR | CPU, NVIDIA GPU (CUDA) | ModelScope | 2,050 MB | No |
+| `faster-whisper-distil-large-v3` | Faster Whisper / CTranslate2 | CPU, NVIDIA GPU (CUDA) | Hugging Face | 1,450 MB | Yes |
+| `qwen3-asr-0.6b` | Qwen3-ASR / Transformers | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | ModelScope, then Hugging Face | 1,600 MB | No |
+| `qwen3-asr-1.7b` | Qwen3-ASR / Transformers | CPU, NVIDIA GPU (CUDA), Apple GPU (MPS) | ModelScope, then Hugging Face | 3,900 MB | No |
+| `moss-transcribe-diarize` | MOSS-Transcribe-Diarize / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 1,900 MB | No |
+| `granite-speech-4.1-2b` | Granite Speech / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 4,945 MB | No |
+| `granite-speech-4.1-2b-plus` | Granite Speech Plus / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 4,225 MB | Yes (task option) |
+| `cohere-transcribe-2b` | Cohere Transcribe / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face (gated) | 4,130 MB | No |
+| `ark-asr-0.6b` | ARK-ASR / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 2,600 MB | No |
+| `ark-asr-3b` | ARK-ASR / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 8,130 MB | No |
+| `voxtral-mini-3b` | Voxtral / Transformers | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 9,360 MB | No |
+| `firered-asr2-aed` | FireRedASR2 AED | CPU, NVIDIA GPU (CUDA) | ModelScope, then Hugging Face | 4,400 MB | Yes |
+
+The two NeMo models run on the NeMo engine and require an NVIDIA GPU (CUDA); they are listed only when the `nemo_toolkit` runtime is available: `parakeet-tdt-0.6b-v3` (25 European languages, word-level timestamps, 2,509 MB) and `canary-1b-flash` (English, German, French, Spanish, 3,541 MB). Both are CC-BY-4.0 with attribution shown in the model details, and neither has been verified on a CUDA machine yet.
+
+The estimates add up to roughly 69 GiB. A real all-model installation may use more or less space.
+
+These device labels describe the execution paths supported by each BeeBox engine; they do not assert that the listed accelerator is present or active on the current machine. The runtime keeps its existing automatic selection and fallback behavior, so the device actually used depends on available hardware and runtime support.
+
+## Choosing a Model
+
+- Quick functional check: `faster-whisper-base`.
+- General use with moderate resources: `faster-whisper-small` or `faster-whisper-medium`.
+- Apple Silicon optimized path: `mlx-whisper-turbo`.
+- CPU quick start: `faster-whisper-base` or `faster-whisper-small`; the Apple-only MLX path is unavailable.
+- Chinese, Cantonese, English, Japanese, or Korean with a compact model: `sensevoice-small`.
+- Chinese subtitles that need a measured timeline: `paraformer-zh`. It aggregates the model's native per-character timestamps into segment cue times and enables VAD segmentation by default; raw output has no punctuation, so punctuation relies on post-processing.
+- Chinese dialects and multilingual audio: `fun-asr-nano` (Tongyi 2025, Apache 2.0). It emits no timestamps, so its cue times are approximate.
+- English-only batch or long audio: `faster-whisper-distil-large-v3`, roughly twice as fast as Large V3 with near-Large quality. It cannot transcribe Chinese or other languages.
+- Broad multilingual Qwen path: `qwen3-asr-0.6b`; use `qwen3-asr-1.7b` when additional model capacity is worth the memory and disk cost.
+- End-to-end speaker diarization without `HF_TOKEN` or a separate diarization model: `moss-transcribe-diarize`. It emits timestamped segments with `[S01]`-style speaker labels in one pass, supports 50+ languages and up to roughly 90 minutes of audio per run, and is Apache 2.0 licensed. It has no word-level timestamps and runs slowly on CPU for long recordings.
+- European-language subtitles with punctuation and casing (English, French, German, Spanish, Portuguese, Japanese): `granite-speech-4.1-2b`. It does not support Chinese, and its cue times are approximate.
+- Speaker-attributed turns or word-level timestamps in one pass (English, French, German, Spanish, Portuguese): `granite-speech-4.1-2b-plus`. The default mode emits `[Speaker N]:` turns; enabling the task's word-timestamps option switches to a timed-word mode whose centisecond tags are unwrapped into a real word timeline. The two modes are mutually exclusive, the model emits no punctuation or casing, and speaker numbering restarts per chunk on long audio.
+- High-accuracy English plus 13 more languages including Chinese, fast, with punctuation: `cohere-transcribe-2b`. It has no automatic language detection — an explicit language is required — and no timestamps; its cue times are approximate. Downloading prefers the open ModelScope mirror; the Hugging Face source needs access approval and fails with a specific gated-repository message when no mirror is reachable.
+- Chinese-English and 17 more European languages with language following the audio: `ark-asr-0.6b` or `ark-asr-3b` (the 3B is the more accurate one, Apache 2.0). No timestamps; long audio is automatically chunked.
+- Very long audio in a single pass (up to 30 minutes) across 8 auto-detected languages: `voxtral-mini-3b`. No Chinese, no timestamps; the processor requires the bundled `mistral-common` dependency.
+- Best open-benchmark Chinese accuracy, plus English and code-switching, with word-level timestamps: `firered-asr2-aed` (Xiaohongshu, Apache 2.0). Single inputs are capped at 60 seconds, so long audio is automatically VAD-chunked with the word timeline aggregated into segment cue times.
+- Maximum Whisper-family capacity: a Large V3 or Large V3 Turbo variant, subject to available RAM and startup time.
+
+Accuracy depends on language, recording quality, music/noise, speakers, and runtime. Benchmark representative media before choosing a default model.
+
+Timeline note: `qwen3-asr-*`, `sensevoice-small`, `fun-asr-nano`, `cohere-transcribe-2b`, `ark-asr-*`, `voxtral-mini-3b`, and `granite-speech-4.1-2b` do not emit timestamps. Their subtitle cue times are approximate values spread across each chunk's audio window, so they are fine for reading order and rough seeking but not for frame-accurate editing; pick a Whisper-family model, `paraformer-zh`, `moss-transcribe-diarize`, `firered-asr2-aed`, or `granite-speech-4.1-2b-plus` with the word-timestamps option when precise timing matters.
+
+## Transcription Safeguards
+
+Whisper-family engines (Transformers Whisper, Faster Whisper, MLX Whisper) decode with anti-hallucination defaults: no cross-window prompt carry-over, plus repeated-ngram suppression where the engine supports it. These defaults stop a hallucination in one decoding window from reinforcing itself into hundreds of repeated words on silent or musical passages. Qwen3-ASR sizes its output token budget from audio duration instead of a fixed cap, so long recordings are not silently truncated.
+
+As an engine-independent safety net, post-processing collapses any token repeated six or more times in a row down to two occurrences without changing segment timing, and the task Quality report flags `REPETITIVE_TRANSCRIPT` for both character-level (Chinese) and word-level (English) repetition.
+
+## Download Controls
+
+- **Pause** keeps the task active and blocks at BeeBox-controlled download checkpoints. An in-flight upstream operation can take a short time to reach a checkpoint.
+- **Resume** continues the paused task in the current application process.
+- **Stop** ends the active task. Already downloaded files remain so a later retry can reuse them.
+- **Retry** starts the same model download again without deleting the existing directory.
+- **Redownload** deletes the BeeBox-managed model directory first and downloads a clean copy.
+- **Delete** unloads the model and deletes `models/<model-name>/`.
+
+Pause state is in memory. Quitting BeeBox stops the current worker; reopening the app does not restore a paused worker, but the upstream downloader may reuse completed files.
+
+BeeBox disables Hugging Face Xet in the managed backend so pause and stop can be observed through controllable file downloads. It also excludes duplicate PyTorch/FP32 weight variants when a model has an accepted runtime weight format.
+
+## Completion and Compatibility
+
+A model is considered downloaded only when its directory has a `model.json` marker and usable weight files. BeeBox separately reports:
+
+- `downloaded`: the managed directory is complete enough to use.
+- `compatible`: required files and runtime support are present.
+- `cache_detected`: an upstream cache exists; this alone does not make the model runnable.
+- `installed_source` and `installed_repo_id`: where the completed managed copy came from.
+
+Hugging Face `.incomplete` files inside a completed model's internal `.cache` do not invalidate the usable model. An incomplete file outside that cache, a missing marker, or missing weights marks the directory incomplete. “Clean incomplete downloads” removes such incomplete managed directories; use it carefully because removal is irreversible.
+
+The backend marks Apple-only `mlx` and `mlx-whisper` models incompatible where those packages are unavailable and rejects their download instead of consuming disk for unusable weights. CPU-compatible models can still require substantial RAM and run much more slowly than GPU execution.
+
+## Verification Status
+
+The 14 models registered as of 2026-07-13 completed transcription of a real MP4 excerpt in the maintainer's macOS Apple Silicon environment on that date. Each run returned non-empty text and segments. `moss-transcribe-diarize` completed a real 6.8-minute two-person interview MP4 on 2026-07-25 in the same environment, returning 161 timestamped segments with three native speaker labels (`S01`–`S03`). Automated API tests cover download status, source fallback, pause/resume/stop/retry, compatibility, storage totals, and duplicate-weight filtering.
+
+On 2026-09-19 the three models added by the phase-1 catalog expansion were verified the same way: `paraformer-zh` transcribed a real 90-second Chinese WAV into 8 timestamped segments (VAD on, token-level timestamps aggregated, monotonic timeline), `fun-asr-nano` transcribed the same clip into 7 segments, and `faster-whisper-distil-large-v3` transcribed a real English WAV sample. Each run completed all six export formats and was deleted afterwards; results are recorded under `backend/real_tests/results/beebox-real-models-20260919-*.md`.
+
+A second 2026-09-19 real-world benchmark ran a user-provided 18:05 English speech video (Trump Pentagon 9/11 memorial address) end-to-end through the production inference path, plus the 90-second Chinese ladder clip, on macOS Apple Silicon CPU with `faster-whisper-large-v3-turbo` as reference: `faster-whisper-distil-large-v3` was 10–25% faster than the reference with 2.9–4.8% WER on English; `paraformer-zh` was the fastest model in the catalog (RTF 0.107) with 8.3% CER on Chinese and 16.8–19.9% WER on English; `fun-asr-nano` reached 6.8% CER on Chinese and 6.6% WER on the full English video. The English-only model was also confirmed to hallucinate English on Chinese audio, validating the English-only catalog labeling. Evidence: `backend/real_tests/results/beebox-real-video-benchmark-20260919*.md`.
+
+The same three models were then checked in the running models page itself (local backend over the repository `data/` directory, 2026-09-19): all three render like existing entries — downloaded badge, CPU/GPU support, speed and accuracy grades, capability badges, and a working "set as default" action; the ladder shows their measured grades (`S S B`, `S A B`, `C A B`) with no estimated `*` marker; the category filters group them as expected (`paraformer-zh` and `fun-asr-nano` under 中文优先, `faster-whisper-distil-large-v3` under Faster Whisper); and each detail panel states its own capability set and limitations. That pass also corrected two copy defects: the Distil entry's capability list had reused the shared Faster Whisper template and claimed multilingual recognition and automatic language detection while its language coverage said English only, and the ladder footnote attributed every measured grade to the Windows + RTX 5080 run. Both now describe what the models and the measurements actually are.
+
+This evidence verifies the tested dependency snapshot and machine, not the accuracy or speed of all models on every CPU or GPU. Future upstream revisions, media codecs, architectures, and hardware can behave differently.
+
+`firered-asr2-aed` was verified on 2026-10-10 through the managed download path (ModelScope source) and the full backend transcription path: a real Chinese clip produced 27 word-timestamped segments (1118 characters) and exported cleanly in all six formats (TXT, SRT, VTT, ASS, JSON, Markdown). Evidence: `backend/real_tests/results/beebox-real-models-firered-final.md`. The NeMo engine models (`parakeet-tdt-0.6b-v3`, `canary-1b-flash`) are covered by unit and contract tests against stub engines only; CUDA-hardware verification is still pending and tracked in `backend/real_tests/results/nemo-cuda-verification-pending.md`.
+
+## Model Sources and Licenses
+
+BeeBox source code is MIT licensed, but model weights and model repositories have their own licenses, acceptable-use terms, attribution requirements, and possible access restrictions. Before production or commercial use:
+
+1. Open the upstream Hugging Face or ModelScope repository named by the model status.
+2. Review its current license and model card.
+3. Confirm commercial use, redistribution, and regional restrictions.
+4. Preserve required attribution.
+
+Do not commit downloaded weights, caches, access tokens, or model directories to this repository.
+
+## Online Providers
+
+Online providers are not local models. They can be useful when local hardware is insufficient or a hosted service offers required features, but media, extracted audio, text, or metadata may leave the machine. Review provider pricing, retention, and privacy terms before use; see [Privacy](privacy.md).

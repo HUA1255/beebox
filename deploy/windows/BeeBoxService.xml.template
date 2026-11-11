@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WinSW service definition for BeeBox.
+  install.ps1 fills the {{...}} placeholders and writes the result next to the
+  WinSW executable as BeeBoxService.xml. The generated file contains the API
+  token, so it lives under <root>\secrets\winsw and must never be committed.
+-->
+<service>
+  <id>{{SERVICE_ID}}</id>
+  <name>{{SERVICE_NAME}}</name>
+  <description>{{SERVICE_DESCRIPTION}}</description>
+
+  <executable>{{PYTHON_EXE}}</executable>
+  <arguments>{{SERVER_ARGUMENTS}}</arguments>
+  <workingdirectory>{{WORKING_DIRECTORY}}</workingdirectory>
+
+  <!-- Runs as LocalSystem (no <serviceaccount>). Automatic start means the
+       service comes up at boot without anybody logging in. -->
+  <startmode>Automatic</startmode>
+  <stoptimeout>20 sec</stoptimeout>
+
+  <!-- WinSW restarts the process within seconds after a crash; resetfailure
+       clears the failure counter after an hour so rare crashes do not keep
+       escalating. The application also rotates its own UTF-8 logs below
+       <root>\logs; this log captures stdout/stderr before the app is up. -->
+  <onfailure action="restart" delay="5 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <logpath>{{LOG_DIRECTORY}}</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <env name="PYTHONUTF8" value="1"/>
+  <env name="PYTHONIOENCODING" value="utf-8"/>
+{{SERVICE_ENV}}
+</service>

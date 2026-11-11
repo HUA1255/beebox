@@ -1,0 +1,418 @@
+# Changelog
+
+All notable BeeBox changes are documented here. The format follows Keep a Changelog, and versions follow Semantic Versioning.
+
+## [Unreleased]
+
+### Fixed
+
+- 部署与安装脚本不再把原生命令写到 stderr 的进度行当成终止错误（`git fetch` 的 “From …”、`uv sync` 的 “Checked …”），修复 `deploy.ps1` 部署 1.0.1 时中断并停服的问题；普通终端 `-DryRun` 也不再被受 ACL 保护的生产 settings 探查中断（refs #91）。
+
+## [1.0.1] - 2026-11-11
+
+### Fixed
+
+- 原生 Windows 安装、`PATH` 中没有 ffmpeg 时，无字幕视频的音轨下载不再失败：yt-dlp 现在收到 `ffmpeg_tools` 解析出的 ffmpeg 可执行文件路径，`FFmpegExtractAudio` 能找到 ffmpeg/ffprobe（refs #85）。
+- 缺少 ffmpeg/ffprobe 的任务以不可重试的 `LOCAL_TOOL_MISSING` 失败（不再是 `DOWNLOAD_NETWORK_ERROR`），提示说明配置 `BEEBOX_FFMPEG_PATH` / `BEEBOX_FFPROBE_PATH`；控制台新增对应中文提示（refs #85）。
+- 音频下载临时目录不再收集 B 站 danmaku 字幕旁文件，并按后缀显式选取 `.wav`，避免误报“未生成 WAV”（refs #85）。
+- 开发实例在普通终端启动时，受 ACL 保护的生产 `settings.env` 探查失败按“不可读”处理，不再中止（refs #88）。
+
+## [1.0.0] - 2026-11-10
+
+BeeBox 首个上线版本：只提供 `/v1` 接口，以 Windows 原生服务部署，与 home 一次性切换（refs #29、#57）。
+
+### Added
+
+- 控制台构建产物 `console/dist` 提交进仓库：生产安装直接从 `<root>\app\console\dist` 提供 `/console`，生产机不需要 Node；CI 在构建后检查该目录是否过期。`/v1/health` 新增非敏感 GPU 信息（可用性、设备名、显存），控制台健康页同步展示；`/v1/errors` 补齐任务取消/重试/删除、模型下载与 B 站登录的状态码（refs #29）。
+
+- Windows 原生安装与服务托管：`deploy/windows/install.ps1` 一条命令建立固定根目录（`app`/`venv`/`models`/`data`/`secrets`/`logs`/`tools`）、按 `uv.lock` 创建 venv、生成含随机 Bearer token 的机器设置、用 WinSW 注册开机自启且崩溃 5 秒后重启的 `BeeBox` 服务并做健康检查；`-DryRun` 只打印步骤。支持 `-ModelRoot` 复用现有模型目录（不下载模型）与 `-FfmpegSource`/`-DenoSource` 从工具目录加载外部工具（refs #53）。
+- 应用日志按进程写入 UTF-8 文件（`BEEBOX_LOG_DIR`，默认 `<root>\logs`）并按大小轮转，控制台日志保留；`backend.server`/`backend.main` 启动时装配（refs #53）。
+- 外部工具解析新增 `BEEBOX_DENO_PATH` 与固定工具目录回退（`<root>\tools`），不再需要 winget 的版本化路径（refs #53）。
+- CI 新增部署脚本 job：解析 `deploy/windows` 下全部 PowerShell 文件、渲染并校验 WinSW 服务配置、执行并断言 `install.ps1 -DryRun` 不产生改动（refs #53）。
+
+### Removed
+
+- 后端只保留转写核心：删除在线 ASR provider、LLM provider、AI 校对、翻译、聊天、批量任务、存储备份/恢复、基准测试、模型推荐、模型存储迁移、下载暂停/继续与 MCP server；同时删除版本历史、分段编辑与说话人改名等改稿接口。新建数据库只包含转写所需表，不迁移旧数据（refs #32）。
+
+## [0.4.0] - 2026-10-10
+### Added
+
+- 本地模型目录新增 **FireRedASR2 AED 1.1B**（路线图阶段 3 引擎部分）：小红书开源、中文公开基准第一（AISHELL-1 CER 0.57%），中英与语码切换、词级时间戳（聚合为句段时间轴），Apache-2.0。推理代码以最小集内置于 `backend/vendor/fireredasr2`，特征提取用 torchaudio 的 Kaldi 兼容 fbank 替代无 Windows 构建的上游库（数值等价已验证），零新增 Python 依赖；长音频经 VAD 切分（单次输入上限 60 秒）。已在 macOS 以真实模型经完整后端路径验证转写与六种导出。
+- server/Docker 构建新增 **NeMo 引擎**（路线图阶段 4，仅服务器部署）：`parakeet-tdt-0.6b-v3`（25 个欧洲语言、词级时间戳）与 `canary-1b-flash`（英德法西）两个 CC-BY-4.0 模型，署名在模型详情展示；CUDA-only、冻结桌面二进制完全隐藏该类条目且不打包 nemo_toolkit（静态断言防回归）。引擎为防御式输出解析 + VAD 长音频切分；**尚未在 CUDA 真机验证**（本仓库 CI 无 CUDA runner，已在文档与任务中如实标注移交项）。
+
+### Changed
+
+- 本地 Ollama 提供商的初始翻译批次上限恢复为 16 段 / 1600 字符（实现此前偏离为 64 段 / 6000 字符，与既有规格不符）：实测每次请求的固定开销可忽略（4B 约 0.04 s），而大批次在长字幕上更容易触发拆分重译，反而更慢。
+
+### Fixed
+
+- 翻译的跨段错位不再可能被静默发布：内容合理性校验改为按译文长度归一化（原阈值按英文长度标定，中文短句重复一律漏判），并在全部批次完成后、写入译文版本之前对完整结果再校验一次；命中的段先做一次定点重译，仍不通过则运行以 `TRANSLATION_ALIGNMENT_UNVERIFIED` 明确失败并保留已成功批次（界面有中英提示），不再发布与时间轴对不上的译文。
+- 本地转写 worker 增加活跃心跳：心跳证明推理仍在推进（进程 CPU 时间持续前进），慢 chunk 不再被停滞时限误杀，推理期间任务行时间戳周期性刷新以呈现存活（进度仍只按完成的音频块推进）；进程存活但心跳冻结、或超过硬性上限仍无产出时才判定停滞并终止，本地队列继续可用。心跳缺失时回退为仅按产出判定。
+- 翻译完整性校验新增三条逐段判据：整段译文回显源文（译文与源文一致、长度达标且文字系统与目标语言不兼容）、模型元评论外泄（括注内出现指向翻译指令的说明，如「（注意：根据要求…）」「(Note: …)」）、占位符译文（整段为「（无翻译）」类占位文本）。三类污染此前逃过全部批量判据仍被发布；名称/符号/已是目标语言的合法原样返回不受影响。
+- 更新间接依赖 source-map-js 到 1.2.2，修复 GHSA-68fv-2mgg-jv7q（高危：索引化 source-map section 偏移可造成事件循环拒绝服务），在保持现有依赖审计门禁的前提下解除对 CI 的阻塞。
+
+## [0.3.3] - 2026-09-24
+
+### Added
+
+- 本地模型目录新增六个 speech-LM 模型（路线图阶段 2）：**Granite Speech 4.1 2B / 2B Plus**（欧洲语种；Plus 单遍输出说话人归属或词级时间戳，两种模式按任务的词级时间戳选项切换）、**Cohere Transcribe 2B**（14 语言含中文，需手动选择语言；Hugging Face 源受限时下载以明确原因码提示访问授权）、**ARK-ASR 0.6B / 3B**（中英 + 17 个欧洲语种）、**Voxtral Mini 3B**（8 语种自动检测，单遍最长 30 分钟）。有单条输入上限的模型自动按 VAD 切分长音频并保持时间轴连续。
+- 模型详情新增许可信息展示（数据来自模型状态接口），并为需要署名的许可预留署名展示位（为阶段 4 CC-BY 类模型铺路）。
+
+### Changed
+
+- Qwen3-ASR 与 MOSS-Transcribe-Diarize 迁移到统一的 `transformers_speech_lm` 引擎（每模型 adapter），行为不变；后续新增 speech-LM 模型不再需要复制引擎代码。
+- transformers 从 git commit pin 升级到 PyPI `5.17.0`（原 pin 内容等于 v5.13.0），带来 Qwen3-ASR 解析修复与多项 Whisper 修复；新增轻量依赖 `mistral-common[audio]`（Voxtral processor 需要）。
+- 不支持自动语种检测的模型（Cohere Transcribe）在转写页不再提供"自动识别 / 中英混合"语言选项；强制语言缺失时任务以明确原因码失败并本地化提示。
+
+### Fixed
+
+- Windows 安装包升级安装不再残留上一版本的文件：安装器在复制新文件前清理自身管理的资源目录，避免旧依赖元数据（例如 `tokenizers-0.22.2.dist-info`）让升级后的应用无法导入 speech-LM 模型。
+
+## [0.3.2] - 2026-09-20
+
+### Added
+
+- 本地模型目录新增三个模型：**Paraformer Large 中文**（中文转写并输出原生字级时间戳，适合中文字幕）、**Fun-ASR-Nano**（通义 2025 新模型，多语种含中文方言）与 **Faster Whisper Distil Large V3**（英文专用，速度约为 Large V3 的两倍）。三者均可在模型页下载、设为默认，并在转写页直接选择。
+- 模型页「模型天梯」为三个新模型补上实测等级（速度 / 准确率 / 语言覆盖），并注明测量口径来自 Windows + RTX 5080 与 macOS Apple Silicon CPU 两轮实测。
+
+### Changed
+
+- 兼容性提示与下载错误分开呈现：模型未下载等状态直接显示原因（如"模型文件未下载，下载后即可使用。"），不再被通用"操作未能完成，请查看技术详情后重试。"覆盖；真实下载错误仍走错误映射，原始后端文本保留在"详情"折叠区。
+- 下载中的模型行改为整行进度布局：文件名、百分比与"暂停 / 停止"排在同一行，避免窄列把文字挤成竖排。
+
+### Fixed
+
+- 修复打包版无法运行 faster-whisper 模型的问题：冻结包缺少 Silero VAD 资源，现已随包分发，并加入打包参数断言与二进制 smoke 断言。
+- 修复打包版带 VAD 的 FunASR 模型加载失败的问题：funasr 中 TorchScript 依赖的源码未随包，现按已安装版本自动收集；Windows 上的打包目标路径统一使用 POSIX 分隔符。
+- 修复打包版 CPU 推理被限制为单线程的问题：转写 worker 现在自行设置线程数（按 CPU 核数与本地并发上限分摊）。大型 CTranslate2 模型实测提速约 4 倍——18 分 05 秒英文视频由约 10 分钟缩短到约 2 分钟，字幕输出逐字一致。
+- 修复桌面端重启内置后端时与 17494 端口释放竞争、导致新实例拒绝启动的问题。
+
+## [0.3.1] - 2026-09-19
+
+### Added
+
+- 任务中心转写结果新增"一键替换"页签：以分段列表展示字幕全文，输入搜索词实时高亮匹配分段并显示匹配数量，一键把全部匹配分段中的搜索词替换为替换词；保存复用批量更新并原子创建恰好一个不可变 `edit` 版本，时间与说话人保持原值，可经版本历史恢复。
+
+## [0.3.0] - 2026-09-18
+
+### Changed
+
+- Unified professional visual system across all pages: continuous light/dark surfaces replace translucent panels and full-screen gradients; dark theme is isomorphic to the light base layout.
+- The home page is a single creation workspace (file drop, model/language/backend row, one start action) above a divided recent-task list, with aligned parameter controls and full-width safe spacing.
+- The task center is a persistent three-region workspace on desktop (task list, player/transcript detail, task status inspector) with working recent/active/completed filters; narrow widths keep an overlay drawer.
+- Model management is now a compact row-based list with category filters, search, refresh, an expandable comparison ladder, details, download controls, and default-model linkage.
+- Settings tabs share consistent selected states and density; all switches keep a compact fixed size with accent-on/neutral-off tracks.
+- All user-visible messages — health center, runtime warnings, errors, validation, empty/loading/queued states, toasts, and confirm dialogs — render in the current interface language; stable error codes and warnings map to maintained Chinese/English copy, and unknown dynamic errors show a localized summary with the original text kept under technical details.
+- The AI workbench keeps proofreading, translation, and chat in one frame where each column scrolls inside its own region; the page itself never grows without bound.
+- The desktop sidebar shows text labels by default for new users; saved sidebar preferences are unchanged.
+- The release pipeline now assembles all platform assets first and generates one unified, basename-only `SHA256SUMS.txt` in the publish job, verified against the desktop updater's exact-name parsing contract — restoring in-app update downloads for installed v0.2.x clients (v0.2.1's per-platform manifests carried `./` prefixes the updater rejects).
+
+### Added
+
+- Edit subtitles mode in the task center: the transcript header gains an "Edit subtitles" view that keeps the read-only row layout (play-from-segment, time range, speaker badge) but makes every segment's text editable; saving submits one batch update and creates exactly one immutable `edit` version, while discard restores the saved text. Saving is disabled until something actually changed.
+- Segment playback padding under Settings → General: "play this sentence" previews can be padded by 0.5–3 seconds before and after the segment (default: strict timeline). The preference is persisted locally and included in frontend settings export/import.
+- Player bar takeover: pausing/resuming from the persistent player bar or scrubbing its progress control releases the segment bounds, so previewed audio keeps playing continuously until manually paused.
+- Per-suggestion audio preview in AI proofreading: each suggestion can play its source segment from its start and stops automatically at its end.
+- Proofreading runs persist the interface language they were created with, and all modification reasons — including split retries — stay in that language.
+- Configurable accent color (orange default; blue, purple, pink, red, green, cyan, gray) applied to primary actions, selection and focus; success/warning/danger states stay fixed. Included in frontend settings export/import.
+- "Set as default" on model rows writes the authoritative ASR setting and syncs the settings page and home preselection; a manually chosen model on an open home draft is not overwritten.
+- Correct brand icons for Ollama, Qwen and OpenAI providers/models with a generic fallback for unknown entries.
+- Global search gains a Cmd/Ctrl+K shortcut.
+- Release tooling gains a dependency-free `SHA256SUMS.txt` format validator (wired into `verify-release-assets.sh`) and version-agnostic fixtures proving the previous maintained client's parsing contract can consume the next Release.
+
+### Fixed
+
+- Home page result window is fixed-height with internal scrolling again; only SRT/TXT downloads are offered there.
+- Task center header buttons without behavior (search, duplicate play, more, close) are gone; long IDs and filenames no longer clip primary actions.
+- Player load/play/pause/seek/volume stay in sync with transcript segments, including frozen-backend Range playback of media on external volumes.
+- Model storage summaries and status scans of large model/cache directories run in the thread pool, so health checks and other requests stay responsive while a scan is in progress.
+- Local Ollama proofreading of long subtitles no longer stalls at zero progress or fails whole runs: bounded local batches with compact triple responses and a single-request deadline, deterministic halving retries on timeout, truncation, context overflow, or invalid structure, and visibly distinct queued vs. inferring states.
+- Long-subtitle translation sends fewer requests (64-segment / 6000-character safe first batch, compact ordered responses) while still verifying every target segment exists exactly once and auto-splitting abnormal batches instead of persisting incomplete results.
+- Chat sessions support binding one subtitle task or explicitly no binding, with the basis panel reflecting the choice.
+
+### Removed
+
+- The legacy segment editor in the task center (subtitle preview toggle, per-segment time/speaker forms, per-segment copy, find & replace, and full-text tools) is replaced by the new Edit subtitles mode; immutable transcript versioning underneath is unchanged.
+
+## [0.2.1] - 2026-09-13
+### Added
+
+- The models page now opens with a full-width model ladder: every local catalog model gets one row with S/A/B/C grades for speed, accuracy, and language coverage plus GPU/CPU, precise-timeline, and speaker-diarization capability marks and its download status. Speed and accuracy grades come from the Windows + RTX 5080 measurement run (90-second Chinese clip, agreement with large-v3) and are labeled as reference values; unmeasured models fall back to engine/size estimates marked with `*`. The ladder replaces the old estimated benchmark panel.
+
+### Changed
+
+- Ollama providers now use the Ollama native chat API instead of the OpenAI-compatible shim: every request carries a per-request context size (default 32768, adjustable in the provider's compatibility settings as "Context length"), explicit non-thinking mode, native JSON Schema output constraints and unlimited output length. Default-configured Ollama installs (4k context) no longer truncate real translation batches, and thinking models stop burning context on hidden reasoning. Gateways that only speak the OpenAI-compatible API can pin the protocol back to OpenAI in compatibility settings.
+
+### Fixed
+
+- Translation batches sent to local Ollama providers are now capped at 16 segments / 1600 source characters (other protocols keep 100 / 6000): small local models visibly misplace content in larger structured batches, returning sliding-window translations that overlap neighbouring segments. Batches whose translations share long substrings their sources do not share, or whose total length implausibly exceeds the source, are now halved and retried through the same deterministic split path as invalid responses instead of being saved as misaligned checkpoints; single-segment results are accepted as-is. The translation prompt now also states explicitly that each text must translate only its own segment.
+- The translation waiting and timeout messages now show the request limit that actually applies to the run's provider (300 seconds for Ollama, 90 for other protocols) instead of a hardcoded 90 seconds.
+- Translation requests to local Ollama providers now get a 300-second total deadline (other protocols keep 90 seconds), covering cold model loads plus large batches; batches that fail with `LLM_PROVIDER_TIMEOUT` or with an incomplete/duplicated provider response (`TRANSLATION_INVALID_RESPONSE`) are now halved and retried deterministically like context/truncation failures, instead of failing the whole run. Single-segment failures still fail explicitly with the original error code.
+- The models page and model-status metadata no longer claim segment/word timestamps for `sensevoice-small` (its FunASR integration emits none, like Qwen3-ASR): both SenseVoice and Qwen3-ASR entries are now marked as producing an approximate timeline whose cue times are spread across the audio, and `docs/models.md` matches. The task detail output panel now shows the same approximate-timeline note for tasks transcribed with these models, so exported subtitles are not mistaken for measured timings.
+- Subtitle line splitting no longer cuts English words in half: when a segment exceeds the per-line character budget the splitter now prefers the last space inside the window, falling back to a hard cut only for text without spaces (e.g. Chinese).
+- Local models whose backends return no timestamps (Qwen3-ASR family, SenseVoice) no longer lose every chunk after the first on media longer than two minutes: the chunk combiner treated their single zero-length segment as overlap and discarded it, so an 18-minute video collapsed to the first chunk's ~14 subtitle lines. Timestamp-less segments now span their chunk window before overlap filtering, keeping the full text from every chunk.
+- Translation batches that still exceed a provider's context or output capacity are now halved and retried deterministically (recursively down to a single segment, merged back in order into the same persisted checkpoint) instead of failing the whole run with `LLM_PROVIDER_TRUNCATED`; single-segment failures still fail explicitly and completed batches are never resent.
+- The translation truncation error now tells local-provider users to raise the context length or switch models instead of a generic "check settings" message.
+
+## [0.2.0] - 2026-09-11
+### Added
+
+- LLM provider setup can now pull the available model IDs straight from the configured endpoint: the add/edit dialog has a "Fetch models" action that works before saving (reusing the stored key when editing), Ollama falls back to its native model listing, and the result is a pick-list that fills the default model field while manual entry stays available. Backed by a new `POST /llm-providers/models` probe endpoint with the same bounded-transport and credential-protection rules as the connection test.
+- Maintainer tooling: `npm run version:bump -- <X.Y.Z>` updates every maintained version source, the README/release-guide anchors, and the CHANGELOG links in one step (promoting the Unreleased section and scaffolding the release-notes file), then re-proves consistency via `check:versions`, which now also enforces CHANGELOG section and link consistency for the current version.
+- GPU acceleration status now carries a machine-readable `reason_code` and the panel offers an explicit "Detect again" action (`POST /settings/cuda-acceleration/redetect`) that re-runs hardware detection; detection caches are also reset automatically on kit lifecycle events, so a GPU that appears after installing a driver no longer stays stuck on "unavailable".
+- On macOS the acceleration settings tab now shows an Apple GPU panel (Metal/MPS and MLX availability plus the models that accelerate automatically) instead of the Windows-only CUDA controls; web and other platforms see a desktop-only explanation.
+
+### Removed
+
+- Global keyboard shortcuts (mod+n / mod+f / mod+, / mod+k), the settings shortcuts card, and the command palette are removed as product decisions; global search remains available from its top-bar button, and settings export/import no longer carries a shortcuts field.
+
+### Changed
+
+- The models page now defaults to the "All" category with "Recommended" as the second filter option, so the full catalog is visible on entry.
+- Not-downloaded model rows now show a localized status description (Chinese/English) instead of the raw backend English sentence, powered by a new machine-readable `compatibility_error_code` field in `GET /models/status`; merely not-downloaded models no longer clutter the "Needs attention" group, and nearby hardcoded English (download status badges, category field, missing-model notice) is localized.
+- The CUDA acceleration panel is now a compact two-card layout, localized failure reasons replace raw backend sentences (with the original text kept as diagnostic detail), and restart-related copy says "restart the app" instead of referring to an internal backend.
+
+### Fixed
+
+- The Windows NSIS installer and uninstaller now use the ASRbox application icon instead of the default NSIS icon.
+- CHANGELOG comparison links for 0.1.7–0.1.9 and the Unreleased baseline now point at the correct tags.
+
+## [0.1.9] - 2026-09-10
+
+### Added
+
+- Windows x64 desktop edition with the same Tauri 2 + bundled FastAPI sidecar architecture as macOS, shipped as an NSIS per-user installer (`ASRbox_<version>_x64-setup.exe`).
+- Vendored Windows ffmpeg/ffprobe 8.1.2 (gyan.dev GPL build) with full provenance, checksums, and GPL source-offer coverage matching the macOS binaries.
+- Desktop updater now recognizes and verifies the Windows NSIS asset from the official GitHub Release; install guidance in Settings → About is platform-aware (Gatekeeper on macOS, SmartScreen on Windows).
+- CI gains a Windows backend regression job; the Release workflow builds the Windows installer in a dedicated job and publishes both desktop installers with a combined `SHA256SUMS.txt` from a single publish job.
+- Windows desktop gains optional CUDA acceleration: Settings → GPU acceleration downloads a byte-verified PyTorch cu128 kit (multi-part Release assets) on demand and enables GPU transcription on NVIDIA hardware; without the kit or the toggle, behavior stays CPU-only. macOS and web deployments are unaffected.
+- Settings → Transcription defaults gains a default-model selector covering local models and enabled online providers, and the transcribe page now preselects the saved default model/provider and default language (including auto-detect) on open; unavailable defaults fall back to the first usable option.
+
+### Fixed
+
+- Windows desktop no longer flashes console windows: the release shell executable is now built GUI-subsystem (`windows_subsystem = "windows"`), and backend child processes (runtime probe, transcription worker, ffmpeg/ffprobe, GPU detection) spawn with `CREATE_NO_WINDOW`.
+- Backend test suite is fully green on Windows (423 passed): platform-aware ffmpeg tool fixtures, symlink-privilege probing, Windows socket error codes, process-exit detection, and timing budgets; no assertion semantics were weakened and macOS behavior is unchanged.
+- Build and test scripts no longer hardcode `.venv/bin/python`; a shared resolver picks `.venv/Scripts/python.exe` on Windows, so `npm run test:backend`, `npm run build:desktop`, and the readiness gates work identically on both platforms.
+
+## [0.1.8] - 2026-09-09
+
+### Added
+
+- AI chat assistant in a new Chat tab on the AI page: answers app-usage questions from a built-in offline knowledge base distilled from the user docs (keyword retrieval with canonical-question weighting, no vector model or external service), and answers questions about the current subtitle version of a bound transcription task (summaries, whether a line appears, mm:ss time positions). Replies stream token by token over per-request SSE and can be stopped with partial content kept; sessions and messages persist locally with cascade delete. Prompt-injection guarding refuses to reveal system instructions and treats injected knowledge/subtitle text as data. The privacy boundary matches proofreading: only session messages, the bound transcript, and matched knowledge passages are sent.
+
+## [0.1.7] - 2026-09-09
+
+### Fixed
+
+- Qwen3-ASR local transcription no longer silently truncates output at a fixed 512-token budget; the default output budget now scales with audio duration (320 tokens per minute, floored at 1024, capped at 8192) and can still be overridden per task.
+- Local Whisper-family engines (faster-whisper, mlx-whisper, transformers-whisper) now default to anti-hallucination decoding (no cross-window prompt carry-over plus repeat suppression), and subtitle post-processing collapses long repeated-token runs, so low-quality or silent audio no longer produces hundreds of repeated words such as "par par par ...". Quality reports now also flag English word-level repetition as `REPETITIVE_TRANSCRIPT`.
+
+### Added
+
+- Local model selectors and download guidance now show whether each maintained ASR model supports CPU and/or GPU inference, with specific CUDA, MPS, and MLX labels and a reminder that the active device depends on the current hardware and runtime.
+
+## [0.1.6] - 2026-09-08
+
+### Added
+
+- Configurable Chat Completions protocol, thinking, output constraints and JSON/SSE transport for both translation and proofreading, including custom providers. Explicit built-in subtitle tests find usable output settings with bounded requests and protect against applying stale recommendations.
+
+- AI subtitle translation between preset or custom languages, preserving source snapshots with independent immutable translation revisions, explicit cancellation/resumption, saved batch progress, and TXT/SRT/VTT/ASS/JSON/Markdown translated or bilingual exports.
+
+### Fixed
+
+- Updated the transitive Nano ID dependency to 3.3.18 to address GHSA-2v37-7h3g-55p8 while preserving the existing dependency audit gate.
+- Ollama subtitle translation now requests non-thinking mode and a JSON Schema with required subtitle fields, IDs and count, supporting local thinking models. Both subtitle workflows now use the shared compatibility settings.
+- Subtitle translation now enforces a 90-second total request deadline even during provider keep-alives, shows batch waiting time, requests JSON without V4 thinking from DeepSeek, and explicitly requires every segment including the last one. Complete JSON code fences are accepted without weakening alignment validation.
+
+## [0.1.5] - 2026-07-27
+
+### Changed
+
+- Desktop and Web API credentials now use Authorization headers; native audio playback receives a path-scoped ticket with a 30-minute idle timeout and a non-renewable 24-hour maximum lifetime, SSE reconnects after startup races, and server connection settings apply only on explicit Save.
+- Runtime compatibility imports run in a bounded short-lived probe process, media tools and desktop/update networking have explicit deadlines, and online SQLite backups use a transaction-consistent snapshot.
+
+### Fixed
+
+- Hardened MCP path access, model deletion, task worker replacement, concurrent retry/retranscribe/delete transitions, and atomic transcript/version writes without changing successful transcription, editing, export, or restore contracts.
+- Failed-chunk retry now has one-writer claiming, cancellation-safe finalization, and non-blocking API execution; active cleanup/relink and concurrent proofreading application share the same lifecycle guard, while partial chunk files and nested orphan WAV files are cleaned safely.
+- Rejected executable-bundle symlink aliases and broad WebView shell opening, sanitized ZIP entry names, bounded large transcript diffs, and prevented global shortcuts from firing inside editable controls.
+
+### Security
+
+- Tokenless containers now fail closed when their declared published address is non-loopback; query credentials are stripped before routine access logging, and packaged desktop instances no longer adopt an already-running backend they do not own.
+
+## [0.1.4] - 2026-07-26
+
+### Added
+
+- Settings now includes an About tab with build/platform identity, author and support links, stable/prerelease selection, optional background checks, in-app notifications, and settings import/export coverage.
+- macOS desktop can check the fixed official GitHub Releases source and download the matching Apple Silicon DMG with global progress, cancel/retry controls, and same-release SHA-256 verification. Installation remains a manual, unsigned and unnotarized replacement; Web builds provide a Releases link only.
+
+## [0.1.3] - 2026-07-26
+
+首个 0.1.1 之后的稳定版，包含 0.1.2-rc.1 与 0.1.2-rc.2 的全部内容及以下新增修复。
+
+### Added
+
+- MOSS-Transcribe-Diarize 0.9B local model (Apache 2.0): end-to-end transcription, segment timestamps, and `[S01]`-style speaker diarization in a single pass, with 50+ languages and up to roughly 90 minutes of audio per run. Speaker labels are produced natively by the engine and need no `HF_TOKEN` or separate diarization model; `max_new_tokens` scales with audio duration so long recordings are not truncated.
+- Detailed per-model introductions on the Models page: every registered model now has an expandable intro with capabilities, language coverage, recommended scenarios, and known limitations in Chinese and English, plus a "Speaker diarization" category filter.
+- README: unsigned-build guidance for the macOS "ASRbox.app is damaged" Gatekeeper dialog, with the one-time `xattr -cr /Applications/ASRbox.app` fix and a screenshot (Chinese and English).
+
+### Changed
+
+- Task pipeline preserves engine-native speaker labels: when a transcription result already carries speakers, pyannote post-processing (and its token requirement) is skipped instead of overwriting native labels.
+- Runtime status now exposes `moss_transcribe_diarize_available`; the field is declared on the response model, asserted in API tests, and typed in the frontend client.
+
+### Fixed
+
+- Model loading after model-storage relocation: snapshot paths recorded as absolute went stale after a move, so Qwen3-ASR failed with "Unrecognized processing class" and FunASR received an unloadable path. Snapshot paths are now re-anchored under the current storage root.
+- FunASR models (SenseVoice) failed in the packaged app because its model registry stayed empty under PyInstaller. The frozen backend now bundles all funasr submodules and pre-imports them at startup.
+- A hung local transcription worker no longer pins a task in transcribing forever: it is terminated after a configurable no-progress window (`ASRBOX_LOCAL_WORKER_STALL_SECONDS`, default 20 minutes) and the task fails as `LOCAL_WORKER_STALLED` with completed chunks kept retryable.
+- Settings Storage & Diagnostics tab: the two-column grid lost its right rail because both storage panels forced full-width spans, leaving empty holes; the recent-error card now clamps long errors to three lines with the full text on hover.
+
+### Chore
+
+- Privacy: `.beads/interactions.jsonl` (agent interaction records) removed from version control and ignored going forward; commit history scrubbed of personal paths and the author's personal email.
+- Committed frontend-audit screenshots removed; the audit output directory is now ignored.
+- OpenSpec: five shipped changes archived into the main specs (stale deltas refreshed as unions), and all specs now carry a one-line Purpose.
+
+## [0.1.2-rc.2] - 2026-07-25
+
+### Added
+
+- MOSS-Transcribe-Diarize 0.9B local model (Apache 2.0): end-to-end transcription, segment timestamps, and `[S01]`-style speaker diarization in a single pass, with 50+ languages and up to roughly 90 minutes of audio per run. Speaker labels are produced natively by the engine and need no `HF_TOKEN` or separate diarization model; `max_new_tokens` scales with audio duration so long recordings are not truncated.
+- Detailed per-model introductions on the Models page: every registered model now has an expandable intro with capabilities, language coverage, recommended scenarios, and known limitations in Chinese and English, plus a "Speaker diarization" category filter.
+
+### Changed
+
+- Task pipeline preserves engine-native speaker labels: when a transcription result already carries speakers, pyannote post-processing (and its token requirement) is skipped instead of overwriting native labels.
+
+### Fixed
+
+- Privacy: `.beads/interactions.jsonl` (agent interaction records) is removed from version control and ignored going forward.
+
+## [0.1.2-rc.1] - 2026-07-25
+
+### Fixed
+
+- Model loading after model-storage relocation: markers recorded absolute snapshot paths that went stale after a move, so Qwen3-ASR failed with "Unrecognized processing class" and FunASR received an unloadable path. Snapshot paths are now re-anchored under the current storage root.
+- FunASR models (SenseVoice) failed in the packaged app because its model registry stayed empty under PyInstaller. The frozen backend now bundles all funasr submodules and pre-imports them at startup, with a source-inspection stub for frozen modules.
+- A hung local transcription worker no longer pins a task in transcribing forever and stalls the local queue: it is terminated after a configurable no-progress window (`ASRBOX_LOCAL_WORKER_STALL_SECONDS`, default 20 minutes) and the task fails as `LOCAL_WORKER_STALLED` with completed chunks kept retryable.
+
+## [0.1.1] - 2026-07-25
+
+### Added
+
+- Desktop media ingest modes: reference the original file in place (new default, no copy, no importing wait) or keep managed copies in the uploads folder. Browser and Docker uploads remain managed copies.
+- Configurable uploads and derived-audio directories with environment-variable locks, availability reporting, and Docker read-only presentation. Location changes apply to new work only; existing files keep working.
+- Per-task media ownership: task deletion, bulk deletion, and storage cleanup only remove ASRbox-managed files and never touch referenced originals.
+- Desktop relink: when a referenced source is moved or deleted, point the task at the file's new path and regenerate derived audio.
+- Optional automatic deletion of derived audio (normalized wav and chunks) after a successful transcription.
+- Optional documented Compose bind mount for `/data/uploads`, with external-disk examples for macOS and Windows.
+
+### Changed
+
+- Desktop drag-and-drop import now uses native Tauri drag events with real file paths, so dropped media follows the same reference/copy ingest mode as the file picker.
+- Derived audio is task-named and written under the configurable derived-audio directory instead of beside the source file.
+- Task responses expose a typed `source_kind` field; new typed media-storage settings routes and a desktop relink endpoint extend the maintained API.
+
+## [0.1.0-rc.2] - 2026-07-22
+
+### Added
+
+- Source-built Linux CPU Docker deployment with a multi-stage non-root image, same-origin Web UI/API, ffmpeg, health checks, and persistent `/data` volume.
+- Model storage relocation settings with selectable target roots, adopt mode, shared-cache handling, and progress polling.
+- Loopback-only Compose defaults with configurable host port, bind address, API token, and host-Ollama connectivity.
+- Docker image, health, persistence, token, deep-link, desktop-browser, and mobile-browser smoke coverage in CI and Release verification.
+- Dedicated AI workspace for LLM subtitle proofreading, provider presets/testing, ordered suggestions, individually collapsible correct ranges, and explicit versioned application.
+- Docker and AI proofreading guides in Chinese and English.
+
+### Changed
+
+- Container-built Web UI connects to its browser origin; desktop and Vite development keep the loopback default.
+- Web API tokens are kept only in browser session storage and excluded from settings export/persistent local storage.
+- Packaged frontend owns `/`; API metadata is available at `/api-info`, while source backend development retains its JSON root.
+- Linux containers identify and reject the Apple-only MLX model before download.
+- README, privacy, security, model, troubleshooting, contribution, CI, release, and third-party documentation now distinguish desktop, Docker, local ASR, online providers, and LLM text processing.
+
+### Security
+
+- Docker binds to `127.0.0.1` by default; LAN exposure is explicit and documented with token, VPN, and authenticated HTTPS proxy requirements.
+- Container state and backups are documented as sensitive because `/data` can contain media, transcripts, and plaintext provider credentials.
+
+## [0.1.0-beta.1] - 2026-07-13
+
+### Added
+
+- Pause, resume, stop, and retry controls for managed model downloads.
+- Model storage responses and UI metrics for the resolved directory, per-model bytes, used bytes, and free/total filesystem capacity.
+- Browser coverage for model storage layout and download controls.
+- Per-launch token protection for the desktop loopback API.
+- Bounded streaming uploads and batch limits.
+- Exact Python runtime, development, and build lock snapshots.
+- FFmpeg GPLv3 license, checksums, source records, and Release source archive.
+- Version/tag consistency and release-asset gates.
+
+### Changed
+
+- Positioned the MVP as a macOS Apple Silicon public beta.
+- Model downloads retain reusable partial files after stop or failure and can retry without deleting the directory.
+- Hugging Face managed downloads disable Xet so pause/stop checkpoints remain controllable.
+- Hugging Face downloads ignore duplicate PyTorch and FP32 weight variants when accepted runtime weights are available.
+- Completed models are no longer invalidated solely by `.incomplete` files inside their internal Hugging Face `.cache`.
+- Transformers Whisper and Qwen3-ASR decode audio through the Transformers `librosa` path before inference.
+- The frozen backend excludes TorchCodec and includes the runtime modules needed by the supported ASR engines.
+- Tauri CSP, capabilities, shell scope, backend CORS, and desktop runtime checks were tightened.
+- Frontend build dependencies were updated and the vulnerability audit restored to a clean state.
+
+### Fixed
+
+- The Model Storage panel now renders stable rows and real capacity values instead of collapsed entries and unavailable totals.
+- Real MP4 transcription no longer fails because the installed PyTorch and TorchCodec binary versions do not match.
+- Timestamp-free single-segment results now span the detected media duration instead of producing a zero-length subtitle.
+- Invalid local-model and online-provider requests are rejected before uploads are saved.
+- Production tasks no longer return placeholder transcripts for invalid backend selections.
+
+### Verified
+
+- All 14 registered local models completed non-empty transcription of a real MP4 excerpt on macOS Apple Silicon.
+- The frozen backend, `.app`, and generated DMG passed local smoke and integrity checks.
+- The repository open-source gate passed backend, TypeScript, Web, Cargo, third-party, version, and browser checks.
+
+### Security
+
+- Documented that provider credentials are plaintext in the local SQLite database and included in backups.
+- Documented the limits of loopback token protection and the unsigned/unnotarized beta package.
+
+## [0.1.0-rc.1] - 2026-07-08
+
+### Added
+
+- Initial macOS Apple Silicon prerelease generated by GitHub Release CI.
+- Tauri desktop MVP with bundled backend sidecar.
+- Bundled ffmpeg/ffprobe for desktop media inspection.
+- Shared Web UI for desktop transcription workflows.
+
+### Known Issues
+
+- The macOS package is not signed or notarized.
+- Windows and Linux packages are not published.
+
+[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/HUA1255/beebox/releases/tag/v1.0.1
+[1.0.0]: https://github.com/HUA1255/beebox/releases/tag/v1.0.0
+[0.4.0]: https://github.com/Goldloli/asrbox/compare/v0.3.3...v0.4.0
+[0.3.3]: https://github.com/Goldloli/asrbox/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/Goldloli/asrbox/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/Goldloli/asrbox/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/Goldloli/asrbox/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/Goldloli/asrbox/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Goldloli/asrbox/compare/v0.1.9...v0.2.0
+[0.1.9]: https://github.com/Goldloli/asrbox/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/Goldloli/asrbox/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/Goldloli/asrbox/compare/v0.1.6...v0.1.7
+[0.1.6]: https://github.com/Goldloli/asrbox/compare/v0.1.5...v0.1.6
+[0.1.0-rc.2]: https://github.com/Goldloli/asrbox/compare/v0.1.0-beta.1...v0.1.0-rc.2
+[0.1.0-beta.1]: https://github.com/Goldloli/asrbox/releases/tag/v0.1.0-beta.1
+[0.1.0-rc.1]: https://github.com/Goldloli/asrbox/releases/tag/v0.1.0-rc.1

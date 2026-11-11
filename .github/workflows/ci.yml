@@ -1,0 +1,359 @@
+name: Backend CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    name: backend tests (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.3"
+          python-version: "3.12"
+          enable-cache: false
+
+      - name: Verify the lock file matches pyproject.toml
+        run: uv lock --check
+
+      - name: Install the locked environment
+        run: uv sync --frozen
+
+      # The CUDA wheels are several GB. Drop the download cache before the
+      # test run so the Windows runner keeps enough free disk space.
+      - name: Free the uv download cache
+        run: uv cache clean
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Run unit and contract tests
+        env:
+          BEEBOX_DATA_DIR: ${{ runner.temp }}/beebox-data
+        run: uv run pytest backend/tests -q --no-header -p no:cacheprovider
+
+  console-build:
+    name: console build (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install console dependencies
+        working-directory: console
+        run: npm ci
+
+      - name: Type-check and build the console
+        working-directory: console
+        run: npm run build
+
+      # console/dist is committed so a fresh Windows install serves /console
+      # without Node on the production host. A source change that was not
+      # rebuilt (or a build that was not committed) fails here.
+      - name: Verify the committed console build is current
+        run: |
+          git diff --exit-code -- console/dist
+          $trackedDiff = $LASTEXITCODE
+          $untracked = git ls-files --others --exclude-standard -- console/dist
+          if ($trackedDiff -ne 0 -or $untracked) {
+            $untracked | ForEach-Object { Write-Host "stale (untracked): $_" }
+            throw "console/dist is stale: run 'cd console; npm ci; npm run build' and commit the result."
+          }
+          Write-Host 'console/dist matches a fresh build.'
+
+      - name: Upload the built console
+        uses: actions/upload-artifact@v7
+        with:
+          name: console-dist
+          path: console/dist
+          if-no-files-found: error
+          retention-days: 7
+
+  console-smoke:
+    name: console smoke (windows-latest)
+    needs: console-build
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: "1"
+      BEEBOX_CONSOLE_SMOKE_PORT: "17497"
+      BEEBOX_CONSOLE_SMOKE_TOKEN: console-smoke-token
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Install console dependencies
+        working-directory: console
+        run: npm ci
+
+      - name: Download the built console
+        uses: actions/download-artifact@v8
+        with:
+          name: console-dist
+          path: console/dist
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.3"
+          python-version: "3.12"
+          enable-cache: false
+
+      - name: Verify the lock file matches pyproject.toml
+        run: uv lock --check
+
+      - name: Install the locked environment
+        run: uv sync --frozen
+
+      # The CUDA wheels are several GB. Drop the download cache before the
+      # smoke run so the Windows runner keeps enough free disk space.
+      - name: Free the uv download cache
+        run: uv cache clean
+
+      - name: Install ffmpeg
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Install Playwright Chromium
+        working-directory: console
+        run: npx playwright install chromium
+
+      # Runs every spec under console/e2e: the read-only views, submitting a
+      # job (upload or video link), cancelling/retrying/deleting it, and the
+      # credentials page (Bilibili QR login and YouTube cookie upload) driven
+      # by the fake login client seeded by scripts/run_console_smoke.py.
+      - name: Run the Playwright smoke tests
+        working-directory: console
+        env:
+          BEEBOX_PYTHON: ${{ github.workspace }}\.venv\Scripts\python.exe
+        run: npx playwright test
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: console-playwright-report
+          path: |
+            console/playwright-report
+            console/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy-scripts:
+    name: deploy scripts (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Parse Windows deployment scripts
+        shell: powershell
+        run: |
+          $files = @(Get-ChildItem -Path deploy/windows -Recurse -File -Include *.ps1,*.psm1)
+          if ($files.Count -eq 0) {
+            throw 'No deployment scripts were found below deploy/windows.'
+          }
+          $failed = $false
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName, [ref]$tokens, [ref]$errors)
+            foreach ($error in $errors) {
+              Write-Host "::error file=$($file.FullName),line=$($error.Extent.StartLineNumber)::$($error.Message)"
+              $failed = $true
+            }
+          }
+          if ($failed) {
+            exit 1
+          }
+          Write-Host "Parsed $($files.Count) PowerShell files without errors."
+
+      - name: Validate the rendered WinSW service config
+        shell: powershell
+        run: |
+          Import-Module ./deploy/windows/BeeBox.Common.psm1 -Force
+          $destination = Join-Path $env:RUNNER_TEMP 'BeeBoxService.xml'
+          $settings = [ordered]@{
+            BEEBOX_ROOT = 'C:\BeeBox'
+            BEEBOX_LOG_DIR = 'C:\BeeBox\logs'
+            BEEBOX_API_TOKEN = 'test-token'
+          }
+          Write-BeeBoxServiceXml `
+            -TemplatePath ./deploy/windows/BeeBoxService.xml.template `
+            -Destination $destination `
+            -SettingsValues $settings `
+            -PythonPath 'C:\BeeBox\venv\Scripts\python.exe' `
+            -Arguments '-m backend.server --host 0.0.0.0 --port 17494' `
+            -WorkingDirectory 'C:\BeeBox\app' `
+            -LogDirectory 'C:\BeeBox\logs' `
+            -ServiceId 'BeeBox' `
+            -DisplayName 'BeeBox'
+          [xml]$document = Get-Content -LiteralPath $destination -Raw
+          if ($document.service.startmode -ne 'Automatic') { throw 'Service start mode must be Automatic.' }
+          if ($document.service.onfailure.action -ne 'restart') { throw 'Service must restart on failure.' }
+          if ($document.service.resetfailure -ne '1 hour') { throw 'resetfailure must be 1 hour.' }
+          if ($document.service.logpath -ne 'C:\BeeBox\logs') { throw 'Service logs must live below the logs directory.' }
+          $envNames = @($document.service.env | ForEach-Object { $_.name })
+          foreach ($required in @('BEEBOX_API_TOKEN', 'BEEBOX_ROOT', 'BEEBOX_LOG_DIR')) {
+            if ($envNames -notcontains $required) { throw "Generated service XML is missing $required." }
+          }
+
+      - name: Verify install.ps1 -DryRun changes nothing
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'beebox-dryrun'
+          if (Test-Path -LiteralPath $root) {
+            Remove-Item -LiteralPath $root -Recurse -Force
+          }
+          $output = & powershell -NoProfile -ExecutionPolicy Bypass `
+            -File ./deploy/windows/install.ps1 -Root $root -AppSource . -DryRun 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "install.ps1 -DryRun failed with exit code $LASTEXITCODE."
+          }
+          if (Test-Path -LiteralPath $root) {
+            throw "install.ps1 -DryRun created $root; it must not change the machine."
+          }
+          $text = $output -join "`n"
+          foreach ($expected in @('uv sync --frozen', 'WinSW', 'service health', 'Dry run finished')) {
+            if ($text -notmatch [regex]::Escape($expected)) {
+              throw "install.ps1 -DryRun output is missing '$expected'."
+            }
+          }
+          Write-Host $text
+
+      - name: Verify dev-instance isolation guards and queue resume
+        shell: powershell
+        run: |
+          # Pure path guards plus a loopback fake /v1/queue server: this never
+          # contacts the production service (port 17494) or a real model.
+          & powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/test-dev-scripts.ps1 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "test-dev-scripts.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Verify dev-instance.ps1 -DryRun changes nothing
+        shell: powershell
+        run: |
+          $base = Join-Path $env:RUNNER_TEMP 'beebox-dev-dryrun'
+          if (Test-Path -LiteralPath $base) {
+            Remove-Item -LiteralPath $base -Recurse -Force
+          }
+          $dev = Join-Path $base 'BeeBoxDev'
+          $prod = Join-Path $base 'BeeBox'
+          $output = & powershell -NoProfile -ExecutionPolicy Bypass `
+            -File ./deploy/windows/dev-instance.ps1 -Action Start -DevRoot $dev -ProdRoot $prod -DryRun 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "dev-instance.ps1 -Action Start -DryRun failed with exit code $LASTEXITCODE."
+          }
+          if (Test-Path -LiteralPath $base) {
+            throw "dev-instance.ps1 -DryRun created $base; it must not change the machine."
+          }
+          $text = $output -join "`n"
+          foreach ($expected in @('17495', 'BEEBOX_DEV_INSTANCE=1', 'BEEBOX_MODEL_STORAGE_ROOT', 'No directory, file, ACL or process was changed')) {
+            if ($text -notmatch [regex]::Escape($expected)) {
+              throw "dev-instance.ps1 -DryRun output is missing '$expected'."
+            }
+          }
+          Write-Host $text
+
+      - name: Verify run-real-tests.ps1 -DryRun does not contact the queue
+        shell: powershell
+        run: |
+          $base = Join-Path $env:RUNNER_TEMP 'beebox-real-dryrun'
+          if (Test-Path -LiteralPath $base) {
+            Remove-Item -LiteralPath $base -Recurse -Force
+          }
+          $output = & powershell -NoProfile -ExecutionPolicy Bypass `
+            -File ./deploy/windows/run-real-tests.ps1 `
+            -DevRoot (Join-Path $base 'BeeBoxDev') -ProdRoot (Join-Path $base 'BeeBox') -DryRun 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "run-real-tests.ps1 -DryRun failed with exit code $LASTEXITCODE."
+          }
+          if (Test-Path -LiteralPath $base) {
+            throw "run-real-tests.ps1 -DryRun created $base; it must not change the machine."
+          }
+          $text = $output -join "`n"
+          foreach ($expected in @('/v1/queue/pause', '/v1/queue/resume', '-ResumeOnly', 'BEEBOX_RUN_REAL_MODELS=1')) {
+            if ($text -notmatch [regex]::Escape($expected)) {
+              throw "run-real-tests.ps1 -DryRun output is missing '$expected'."
+            }
+          }
+          Write-Host $text
+
+      - name: Verify deploy.ps1 -DryRun changes nothing and prints the steps in order
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'beebox-deploy-dryrun'
+          if (Test-Path -LiteralPath $root) {
+            Remove-Item -LiteralPath $root -Recurse -Force
+          }
+          $output = & powershell -NoProfile -ExecutionPolicy Bypass `
+            -File ./deploy/windows/deploy.ps1 -Tag v0.0.0-dry-run -Root $root -DryRun 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "deploy.ps1 -DryRun failed with exit code $LASTEXITCODE."
+          }
+          if (Test-Path -LiteralPath $root) {
+            throw "deploy.ps1 -DryRun created $root; it must not change the machine."
+          }
+          $text = $output -join "`n"
+          $steps = @(
+            'Pausing the GPU queue',
+            'Waiting for the current job to finish',
+            'Preparing tag',
+            'Stopping the',
+            'Checking out tag',
+            'uv sync --frozen',
+            'Running database migrations',
+            'Starting the',
+            'Checking service health',
+            'Resuming the GPU queue',
+            'Dry run finished'
+          )
+          $position = -1
+          foreach ($step in $steps) {
+            $found = $text.IndexOf($step, [System.StringComparison]::OrdinalIgnoreCase)
+            if ($found -lt 0) {
+              throw "deploy.ps1 -DryRun output is missing '$step'."
+            }
+            if ($found -lt $position) {
+              throw "deploy.ps1 -DryRun printed '$step' out of order."
+            }
+            $position = $found
+          }
+          Write-Host $text

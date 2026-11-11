@@ -1,0 +1,15 @@
+third_party/ffmpeg/checksums.sha256 text eol=lf
+
+# Shell scripts must stay LF even on Windows checkouts (core.autocrlf).
+*.sh text eol=lf
+
+# The committed OpenAPI contract is compared after regeneration; keep it LF
+# and diff-stable on every platform.
+openapi.json text eol=lf
+
+# The committed console build is rebuilt and compared byte-for-byte in CI.
+# A CRLF checkout conversion would make that comparison dirty on Windows.
+console/dist/** text eol=lf
+# The Vite template is copied into console/dist/index.html; keep it LF so the
+# build is byte-identical on every checkout.
+console/index.html text eol=lf

@@ -1,0 +1,7 @@
+{
+  "cues": [
+    {"start_ms": 500, "end_ms": 4510, "text": "Welcome to the channel this is auto generated"},
+    {"start_ms": 4510, "end_ms": 7000, "text": "let's talk about subtitles"},
+    {"start_ms": 7000, "end_ms": 9500, "text": "and how they are picked"}
+  ]
+}

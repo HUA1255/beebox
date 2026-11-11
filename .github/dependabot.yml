@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # 组策略：minor/patch 进每日组 PR 统一合并；major 不进入组，
+  # 由 dependabot 单独提 PR，按 AGENTS.md 评估（大版本需先开 issue 并独立验证）后再合。
+  # Python：根目录 pyproject.toml + uv.lock
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: daily
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    # torch / torchaudio 在 Windows 上来自 PyTorch 的 CUDA 源（见 pyproject 的
+    # tool.uv.sources），PyPI 上的新版本那里不一定有，会让整组更新解析失败；
+    # 而且升级它们必须配合 CUDA 源与真实模型验收，因此只手动升级。
+    ignore:
+      - dependency-name: "torch"
+      - dependency-name: "torchaudio"
+    open-pull-requests-limit: 5
+
+  # GitHub Actions：.github/workflows/
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily

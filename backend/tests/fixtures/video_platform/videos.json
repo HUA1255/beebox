@@ -1,0 +1,366 @@
+{
+  "tool_version": "fake-2026.10.26",
+  "login": {
+    "state": "not_required"
+  },
+  "videos": [
+    {
+      "platform": "bilibili",
+      "id": "BV1Gt411c7mD",
+      "urls": [
+        "https://www.bilibili.com/video/BV1Gt411c7mD",
+        "https://m.bilibili.com/video/BV1Gt411c7mD",
+        "https://b23.tv/BeeBox42"
+      ],
+      "title": "示例视频：字幕路径",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 75.25,
+      "audio_seconds": 2.0,
+      "tracks": [
+        {
+          "language": "zh-CN",
+          "kind": "auto",
+          "format": "srt",
+          "path": "bilibili-auto-zh.srt"
+        },
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "dQw4w9WgXcQ",
+      "urls": [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ"
+      ],
+      "title": "YouTube Subtitle Sample",
+      "author": "Sample Channel",
+      "duration_seconds": 42.5,
+      "tracks": [
+        {
+          "language": "zh-Hans",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-zh-translated.vtt",
+          "translated": true
+        },
+        {
+          "language": "en",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-en.vtt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "NoSubtitle42",
+      "urls": [
+        "https://www.youtube.com/watch?v=NoSubtitle42"
+      ],
+      "title": "No Subtitles Video",
+      "author": "Sample Channel",
+      "duration_seconds": 12.0,
+      "audio_seconds": 12.0,
+      "tracks": []
+    },
+    {
+      "platform": "youtube",
+      "id": "MultiLang43",
+      "urls": [
+        "https://www.youtube.com/watch?v=MultiLang43"
+      ],
+      "title": "多语言字幕示例",
+      "author": "Sample Channel",
+      "duration_seconds": 30.0,
+      "audio_seconds": 2.0,
+      "original_language": "ja",
+      "tracks": [
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt",
+          "translated": true
+        },
+        {
+          "language": "en",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-en.vtt"
+        },
+        {
+          "language": "en",
+          "kind": "manual",
+          "format": "srt",
+          "path": "manual-en.srt"
+        },
+        {
+          "language": "ja",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "auto-ja.vtt"
+        },
+        {
+          "language": "zh-Hant",
+          "kind": "manual",
+          "format": "srt",
+          "path": "manual-zh-hant.srt"
+        },
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt"
+        },
+        {
+          "language": "zh-Hant",
+          "kind": "auto",
+          "format": "srt",
+          "path": "bilibili-auto-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "AutoZhOnly43",
+      "urls": [
+        "https://www.youtube.com/watch?v=AutoZhOnly43"
+      ],
+      "title": "中文自动字幕示例",
+      "author": "Sample Channel",
+      "duration_seconds": 11.0,
+      "tracks": [
+        {
+          "language": "zh-Hant",
+          "kind": "manual",
+          "format": "vtt",
+          "path": "youtube-auto-zh-translated.vtt",
+          "translated": true
+        },
+        {
+          "language": "zh-Hans",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-zh-rolling.vtt"
+        },
+        {
+          "language": "zh-Hant",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-zh-translated.vtt",
+          "translated": true
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "EnglishOriginal43",
+      "urls": [
+        "https://www.youtube.com/watch?v=EnglishOriginal43"
+      ],
+      "title": "English Original Sample",
+      "author": "Sample Channel",
+      "duration_seconds": 30.0,
+      "original_language": "en",
+      "tracks": [
+        {
+          "language": "ja",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "auto-ja.vtt"
+        },
+        {
+          "language": "en",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-en.vtt"
+        },
+        {
+          "language": "en",
+          "kind": "manual",
+          "format": "srt",
+          "path": "manual-en.srt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "JapaneseOriginal43",
+      "urls": [
+        "https://www.youtube.com/watch?v=JapaneseOriginal43"
+      ],
+      "title": "Japanese Original Sample",
+      "author": "Sample Channel",
+      "duration_seconds": 30.0,
+      "original_language": "ja",
+      "tracks": [
+        {
+          "language": "en",
+          "kind": "manual",
+          "format": "srt",
+          "path": "manual-en.srt"
+        },
+        {
+          "language": "ja",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "auto-ja.vtt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "TranslatedOnly43",
+      "urls": [
+        "https://www.youtube.com/watch?v=TranslatedOnly43"
+      ],
+      "title": "Only Machine Translated Subtitles",
+      "author": "Sample Channel",
+      "duration_seconds": 30.0,
+      "audio_seconds": 2.0,
+      "tracks": [
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt",
+          "translated": true
+        },
+        {
+          "language": "en",
+          "kind": "auto",
+          "format": "vtt",
+          "path": "youtube-auto-en.vtt",
+          "translated": true
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "AgeRestricted48",
+      "urls": [
+        "https://www.youtube.com/watch?v=AgeRestricted48"
+      ],
+      "title": "Age Restricted Sample",
+      "author": "Sample Channel",
+      "duration_seconds": 6.0,
+      "age_restricted": true,
+      "tracks": [
+        {
+          "language": "en",
+          "kind": "manual",
+          "format": "srt",
+          "path": "manual-en.srt"
+        }
+      ]
+    },
+    {
+      "platform": "youtube",
+      "id": "ManualZh44",
+      "urls": [
+        "https://www.youtube.com/watch?v=ManualZh44"
+      ],
+      "title": "示例视频：字幕路径",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 75.25,
+      "tracks": [
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "bilibili",
+      "id": "BV1LoginOnly",
+      "urls": [
+        "https://www.bilibili.com/video/BV1LoginOnly"
+      ],
+      "title": "Login Required Video",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 30.0,
+      "login_required": true,
+      "tracks": [
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "bilibili",
+      "id": "BV1AiZh065",
+      "urls": [
+        "https://www.bilibili.com/video/BV1AiZh065"
+      ],
+      "title": "B 站 AI 中文字幕",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 6.0,
+      "original_language": "zh",
+      "tracks": [
+        {
+          "language": "ai-zh",
+          "kind": "auto",
+          "format": "srt",
+          "path": "bilibili-ai-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "bilibili",
+      "id": "BV1AiManual065",
+      "urls": [
+        "https://www.bilibili.com/video/BV1AiManual065"
+      ],
+      "title": "B 站 AI 字幕与人工字幕",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 66.0,
+      "original_language": "zh",
+      "tracks": [
+        {
+          "language": "ai-zh",
+          "kind": "auto",
+          "format": "srt",
+          "path": "bilibili-ai-zh.srt"
+        },
+        {
+          "language": "zh-Hans",
+          "kind": "manual",
+          "format": "srt",
+          "path": "bilibili-manual-zh.srt"
+        }
+      ]
+    },
+    {
+      "platform": "bilibili",
+      "id": "BV1AiEn065",
+      "urls": [
+        "https://www.bilibili.com/video/BV1AiEn065"
+      ],
+      "title": "B 站 AI 英文字幕（机器翻译）",
+      "author": "BeeBox 测试频道",
+      "duration_seconds": 30.0,
+      "audio_seconds": 2.0,
+      "original_language": "zh",
+      "tracks": [
+        {
+          "language": "ai-en",
+          "kind": "auto",
+          "format": "srt",
+          "path": "manual-en.srt"
+        }
+      ]
+    }
+  ]
+}

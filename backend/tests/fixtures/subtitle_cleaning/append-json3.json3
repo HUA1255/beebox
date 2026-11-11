@@ -1,0 +1,20 @@
+{
+  "events": [
+    {
+      "tStartMs": 0,
+      "dDurationMs": 1000,
+      "segs": [{"utf8": "第一句"}]
+    },
+    {
+      "tStartMs": 1000,
+      "dDurationMs": 1000,
+      "aAppend": 1,
+      "segs": [{"utf8": "继续补充一段比较长的内容"}]
+    },
+    {
+      "tStartMs": 2000,
+      "dDurationMs": 1000,
+      "segs": [{"utf8": "第二段内容也别太短"}]
+    }
+  ]
+}

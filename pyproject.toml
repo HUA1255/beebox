@@ -1,0 +1,62 @@
+[project]
+name = "beebox"
+version = "1.0.1"
+description = "Local-first speech transcription backend for Windows"
+license = "GPL-3.0-only"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.139",
+    "uvicorn>=0.49",
+    "sqlalchemy>=2.0.51",
+    "python-multipart>=0.0.32",
+    "requests>=2.34.2",
+    "yt-dlp==2026.10.26",
+    "bgutil-ytdlp-pot-provider==2.0.2",
+    # QR login for Bilibili; pinned because the upstream project is archived
+    # and will not receive compatibility fixes (ADR-0012). GPL-3.0.
+    "bilibili-api-python==17.4.2",
+    # bilibili-api talks HTTP through one of aiohttp/httpx/curl_cffi; name
+    # aiohttp explicitly because the real login path depends on it.
+    "aiohttp>=3.13",
+    "pydantic>=2.13.4",
+    "huggingface-hub>=1.21",
+    "tqdm>=4.68",
+    "modelscope>=1.38",
+    "torch>=2.11",
+    "torchaudio>=2.11",
+    "transformers>=5.17",
+    "mistral-common[audio]>=1.8.1",
+    "moss-transcribe-diarize @ git+https://github.com/OpenMOSS/MOSS-Transcribe-Diarize.git@0e3d1403fd8f1f1c674e883ece96b9f630794ebe",
+    "accelerate>=1.14",
+    "faster-whisper>=1.2.1",
+    "funasr>=1.4.15",
+    "pyannote.audio>=4.0.7",
+    "opencc-python-reimplemented>=0.1.7",
+    "sse-starlette>=3.4.5",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.12",
+    "pytest>=9.1",
+]
+
+[tool.uv]
+# The backend runs from the repository root; it is not installed as a package.
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+# Windows runs the CUDA 12.6 builds; the same lock resolves every other
+# platform against PyPI. torchaudio 2.11.0 and torch 2.14.1 are the newest
+# cu126 wheels available for CPython 3.12 on win_amd64.
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
+torchaudio = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["."]

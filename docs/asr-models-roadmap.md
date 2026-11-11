@@ -1,0 +1,113 @@
+# 本地 ASR 模型扩充路线图
+
+> **文档定位**：这是一份前瞻性规划文档，记录"扩充本地开源 ASR 模型目录"这一需求的完整意图、分阶段范围与实现程度。它**不是**产品行为的事实来源——已实现的行为以 `GLOSSARY.md`、ADR 与契约测试为准，进行中的计划以 GitHub issue 为准。每个阶段落地后，本文同步更新该阶段状态。
+
+## 需求背景
+
+BeeBox 目前的本地模型目录以 Whisper 系（transformers / faster-whisper / MLX）、Qwen3-ASR、MOSS-Transcribe-Diarize 和 SenseVoice Small 为主。需求是：**把 2025–2026 年开源生态中值得引入的本地 ASR 模型分阶段加入目录**，保持：
+
+- 每个新模型如实声明语言覆盖、时间戳/说话人/流式能力、设备矩阵（现有 ADR 与契约测试的能力事实约束继续生效）；
+- 不因引入模型而膨胀桌面发布包体积——新 runtime 必须论证打包与体积策略；
+- 许可合规：许可证、署名义务与 `THIRD_PARTY_NOTICES.md` 同步维护；
+- 每阶段一个独立 GitHub issue，实现、测试、文档与契约对齐后关闭。
+
+## 现状盘点（截至 2026-09）
+
+现有引擎与模型注册于 `backend/backends/registry.py`，引擎分发在 `backend/backends/local_asr.py`：
+
+| 引擎 | runtime | 已有模型 |
+|---|---|---|
+| `whisper_transformers` | transformers | whisper base/small/medium/large-v3/large-v3-turbo |
+| `faster_whisper` | CTranslate2 | 同上五档 |
+| `mlx_whisper` | MLX | whisper large-v3-turbo |
+| `qwen3_asr` | transformers | Qwen3-ASR 0.6B / 1.7B |
+| `moss_transcribe_diarize` | transformers | MOSS-Transcribe-Diarize 0.9B |
+| `funasr` | FunASR | SenseVoice Small |
+
+## 阶段总览
+
+| 阶段 | 内容 | 新增 runtime | 状态 |
+|---|---|---|---|
+| 1 | FunASR 系扩展（Paraformer、Fun-ASR-Nano）+ Distil-Whisper | 无（复用 funasr / faster_whisper） | 已实现并通过真机验证 |
+| 2 | transformers speech-LM 统一引擎重构 + Cohere Transcribe / Granite Speech 4.1 / ARK-ASR / Voxtral Mini | 无新 runtime；transformers 升级 PyPI 5.17.0 + 轻量依赖 mistral-common[audio] | 已实现并通过 Windows 与 macOS 真机验证（验证记录 `backend/real_tests/results/beebox-speech-lm-smoke-20260920.md`） |
+| 3 | FireRedASR2-AED + 通用 forced-alignment 时间戳后处理 | FireRedASR 官方推理代码（vendored 最小集） | 引擎部分已实现并通过 macOS 真机验证；forced-alignment 通用后处理拆分为后续独立任务 |
+| 4 | NeMo 引擎（Parakeet TDT v3 / Canary-Qwen / Canary-1B-Flash 等），需可选 NeMo runtime | nemo_toolkit（可选安装，不进入默认依赖） | 代码与契约完成：Parakeet TDT v3 与 Canary 1B Flash 落地（CC-BY-4.0 署名）；CUDA 真机验证为移交项。canary-qwen-2.5b（仓库无 .nemo 文件）与 IndicParakeet-7B（仓库访问不可核实）暂缓 |
+
+阶段 2–4 的任务通过 GitHub issues 跟踪，每条任务描述引用本文。
+
+## 阶段 1：FunASR 系扩展 + Distil-Whisper（零新依赖）
+
+**模型与实现程度**：
+
+| 模型 | 引擎 | 来源 | 能力声明 |
+|---|---|---|---|
+| Paraformer-large（zh，离线版，非 streaming） | `funasr` | ModelScope 主源 + HF 镜像 | 句段时间戳（由原生字级时间戳聚合），zh/en，cpu/cuda |
+| Fun-ASR-Nano（800M） | `funasr` | ModelScope 主源 | 无原生时间戳，zh（含方言），cpu/cuda |
+| Distil-Whisper large-v3 | `faster_whisper` | HF（CTranslate2 转换版） | 句段+词级时间戳，仅英文，cpu/cuda |
+
+**验收程度**：
+
+- FunASR 引擎内引入按模型的轻量 adapter（现 `_clean_sensevoice_text` 为 SenseVoice 特化）；Paraformer 的字级时间戳聚合为句段 `TranscriptSegment`，词级暂不透出。
+- 新增 FunASR 系模型默认启用 `fsmn-vad` 切分长音频；SenseVoice 行为不变。
+- Distil-Whisper 在模型目录如实标注"仅英文"，防止用户误用于中文。
+- 注册、下载、能力展示走现有 `model-management` 生命周期，无 API 变更。
+- 模型许可记录与 `THIRD_PARTY_NOTICES.md` 更新（Paraformer 为模型协议，Fun-ASR-Nano Apache 2.0，Distil MIT）。
+
+## 阶段 2：transformers speech-LM 统一引擎（多语言精度梯队）
+
+**动机**：`Qwen3ASRBackend` 与 `MossTranscribeDiarizeBackend` 已重复"加载 processor/model → 构造输入 → generate → 解析输出"逻辑。抽成 `transformers_speech_lm` 引擎 + 每模型小 adapter（prompt 构造 / 输出解析），后续模型只需 registry 条目 + adapter。
+
+**候选模型**（2026-09-20 已逐一核实并落地）：
+
+- Granite Speech 4.1 2B（Apache 2.0；en/fr/de/es/pt/ja；无时间戳）
+- Granite Speech 4.1 2B Plus（Apache 2.0；词级时间戳与说话人归属为两种互斥 prompt 模式，按任务词级时间戳选项切换；不支持标点/大小写）
+- Cohere Transcribe 2B（Apache 2.0；14 语言含 zh；无时间戳、需显式语言；HF gated=auto，ModelScope 镜像主源 + 401 失败引导）
+- ARK-ASR 3B / 0.6B（Apache 2.0；19 语言含中英；`trust_remote_code`）
+- Voxtral Mini 3B 离线版（Apache 2.0；8 语言；30 分钟单遍；processor 依赖 `mistral-common[audio]`）
+
+**核查剔除**（2026-09-20）：
+
+- Belle-2——"Qwen3-ASR 底座的 Belle-2"不存在：HF `BELLE-2` org 实为 Whisper 中文微调系列（2024），前提不成立。
+- MOSS-Transcribe-preview-2B——仅英语、`trust_remote_code`、无输出时间戳/说话人证明，相对 Distil-Whisper + MOSS-Diarize 无边际价值。
+
+**后续候选线索**（未评估）：Granite Speech 5（CTC，transformers ≥5.16）、granite-speech-4.1-2b-nar（非自回归高吞吐，需 remote code + flash attention）、Voxtral Small 24B、Canary-1B-v2（transformers 5.17 新增）。
+
+**实现程度**：引擎重构不改变 `TranscriptionResult` 契约；transformers 升级到 PyPI 5.17.0 并同步两个 runtime lock（Windows lock 需在 Windows 环境按流程冻结）；CC-BY-4.0 署名展示的数据管道（registry `license`/`attribution` 字段 + 详情渲染）已随本阶段落地，阶段 4 引入 CC-BY 模型时直接声明数据即可。
+
+## 阶段 3：FireRedASR2-AED + 通用对齐后处理
+
+- FireRedASR2-AED 1.1B：中文公开基准第一，自带 VAD/标点/语种识别/时间戳；官方推理代码独立，需 vendored 最小推理集 + fsmn-vad 切分（AED 单次 60s 限制）。
+- Qwen3-ASR 官方 forced-aligner 作为**通用对齐后处理服务**：任何 `supports_timestamps=false` 的模型转写后可选执行对齐，把无时间戳结果升级为带字幕轴的句段。一次投入、全家族受益；对齐失败不影响基础转写成功（遵守 `transcription-lifecycle` 的可选后处理隔离约束）。
+
+**实现程度（2026-10-10）**：引擎部分由 change `add-firered-asr2-aed` 落地——vendored 最小 AED 推理集置于 `backend/vendor/fireredasr2`（上游 Apache-2.0，commit `4e7d9aaf`）；因上游特征库 `kaldi_native_fbank` 无 Windows wheel，特征提取改为 torchaudio 的 Kaldi 兼容 fbank（数值等价性已对比验证：max diff 6.4e-5 相对值），且波形保持 int16 量级以匹配随模型分发的全局 CMVN（[-1,1] 归一会使模型听到静音——已实测）。词级时间戳聚合句段（间隔 >0.8s 或 40 字断句），长音频 fsmn-vad 切分 ≤59s。macOS 真机经完整后端路径验证（75s 单遍 + 185s 分块，六种导出）。forced-aligner 通用后处理**拆分为后续独立 change**（需单独设计任务选项、管线阶段与失败隔离）。
+
+## 阶段 4：NeMo 引擎（可选 runtime）
+
+Parakeet TDT 0.6B v3、Canary-Qwen-2.5B、Canary-1B-Flash、IndicParakeet-7B。`nemo_toolkit` 体积大且 CUDA-only，不进入默认依赖，只在安装了该可选 runtime 时注册；registry 以 `supported_devices=["cuda"]` 过滤。CC-BY-4.0 署名义务在此阶段随模型引入落地。
+
+**实现程度（2026-10-10）**：change `add-nemo-server-engine` 落地 **Parakeet TDT 0.6B v3**（25 个欧洲语言、词级时间戳、单遍长音频）与 **Canary 1B Flash**（英德法西、10 分钟分块）——`NemoASRBackend`（restore_from 本地 `.nemo` 权重、CUDA 显式选择、防御式输出归一、VAD 切分偏移）、registry 条目带 CC-BY-4.0 `attribution` 署名（模型详情渲染）。**暂缓**：canary-qwen-2.5b（仓库仅 transformers 格式、无 `.nemo` 文件，restore_from 不适用）、IndicParakeet-7B（AI4B 仓库不可核实/需申请访问）。**移交项**：CUDA 真机验证（本仓库无 CUDA runner）。
+
+## 明确排除项
+
+| 模型 | 排除理由 |
+|---|---|
+| Meta MMS | CC-BY-NC 非商用，与开源发布冲突 |
+| Moonshine 中文版 | Community License（年营收 >$1M 需授权）；中文 CER ~36% 无实用价值 |
+| Kyutai STT、Voxtral Realtime | 流式导向，BeeBox 为批处理产品；待产品引入实时场景再议 |
+| diffusion-gemma-asr | 研究性质，明确不可部署 |
+| GigaAM 等小语种专用模型 | 等明确语种需求再评估 |
+| Moonshine 英文版、Vibe、Scribe 等英文专用模型 | 暂缓：Distil-Whisper 已覆盖英文提速需求；阶段 2 后按需重评 |
+
+## 横切约束（每个阶段的 change 都须覆盖）
+
+- **许可证与署名**：新模型许可写入 registry 元数据与 `THIRD_PARTY_NOTICES.md`；CC-BY-4.0 模型需在模型详情与关于页展示署名（阶段 2 设计、阶段 4 落地）。
+- **设备矩阵**：`supported_devices` 如实反映引擎可用路径；NeMo/MLX 等平台专属引擎在其余平台自然隐藏。
+- **下载源**：沿用 `source_candidates`（ModelScope 主源 + HF 镜像）与 `allow_patterns` 白名单；gated repo 需明确失败态与引导。
+- **测试**：adapter 单测（stub 替身，见 `backend/tests/test_repetition_guardrails.py` 模式）、registry 测试、`real_tests/` 真机验证；不削弱既有断言。
+- **API 契约**：模型扩充不改变受维护路由与字段；如需新增能力字段，同步 response_model、typed consumer 与 contract test。
+
+## 新会话接手指南
+
+1. `gh issue list --state open` 查看活动任务。
+2. 读本文了解全局意图与边界，读 `GLOSSARY.md`、ADR 与契约测试了解必须保持的行为。
+3. 按 issue 的 Acceptance criteria 实施；实现与验证完成后回写本文的阶段状态。

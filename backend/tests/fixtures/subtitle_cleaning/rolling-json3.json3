@@ -1,0 +1,24 @@
+{
+  "events": [
+    {
+      "tStartMs": 0,
+      "dDurationMs": 2000,
+      "segs": [{"utf8": "这是一个用来测试"}]
+    },
+    {
+      "tStartMs": 2000,
+      "dDurationMs": 2000,
+      "segs": [{"utf8": "这是一个用来测试"}, {"utf8": "\n"}, {"utf8": "字幕合并的例子"}]
+    },
+    {
+      "tStartMs": 4000,
+      "dDurationMs": 2500,
+      "segs": [{"utf8": "字幕合并的例子"}, {"utf8": "\n"}, {"utf8": "然后是第二段"}]
+    },
+    {
+      "tStartMs": 6500,
+      "dDurationMs": 1500,
+      "segs": [{"utf8": "然后是第二段"}, {"utf8": "\n"}, {"utf8": "最后一段结束"}]
+    }
+  ]
+}
