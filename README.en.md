@@ -2,130 +2,310 @@
 
 # BeeBox
 
-**A local-first home speech AI service**
+**Turn speech into text you can trust. A speech transcription service that runs on your own machine.**
 
-Runs on a Windows GPU machine at home and turns audio, video, and Bilibili / YouTube links into transcripts with timestamps and speaker labels.<br>
-It exposes its capabilities only through the `/v1` HTTP API; models and data stay on the machine, with no dependency on externally hosted services.
+Recordings, video files, Bilibili and YouTube links go in. Transcripts with character-level timestamps, speakers, and natural paragraphs come out.<br>
+It runs on a single consumer GPU, and your models and data never leave your machine.
 
-<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.1-blue?style=flat-square" alt="version"></p>
+<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.1-blue?style=flat-square" alt="version"> <img src="https://img.shields.io/badge/platform-Windows_11_·_NVIDIA-555?style=flat-square" alt="platform"></p>
 
-<p><a href="README.md">中文</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/adr/">Architecture decision records</a> · <a href="GLOSSARY.md">Glossary</a></p>
+<p><a href="README.md">简体中文</a> · <a href="#getting-started">Getting started</a> · <a href="#ai-agent-deployment-guide">AI agent deployment</a> · <a href="docs/history.md">Fix and decision history</a> · <a href="CHANGELOG.md">Changelog</a></p>
 
 </div>
 
 ---
 
+## Why BeeBox
+
+| | |
+| --- | --- |
+| 🎯 **Accurate on Chinese** | Built on Qwen3-ASR-1.7B for Chinese meetings, lectures, and interviews, including the English terms mixed into them |
+| ⏱️ **Character-level timestamps** | Forced alignment gives every character a start and end time, so subtitles line up exactly with the audio |
+| 🗣️ **Knows who is speaking** | pyannote speaker diarization; every paragraph belongs to exactly one speaker |
+| 📖 **Reads like prose** | Text is split into sentences, then grouped into natural paragraphs per speaker, without changing a single recognised character |
+| 🔗 **Paste a link** | Bilibili and YouTube links work directly. With platform subtitles, results arrive in seconds without touching the GPU; otherwise only the audio track is downloaded and transcribed |
+| 💪 **Long recordings survive interruptions** | Long audio is split into chunks and each chunk is saved as it finishes. After a restart, jobs resume from the last chunk and queued jobs stay queued |
+| 🔌 **One API for everything** | A single `/v1` HTTP API: upload, create a job, poll, fetch the result. Scripts, apps, and AI agents can call it directly |
+| 🔒 **Your data stays home** | All inference is local; source media is deleted after use; LAN access requires a token; platform credentials are write-only |
+| 🧩 **More than 20 local models** | Whisper, SenseVoice, Paraformer, FireRedASR2, Granite, Voxtral, and more, chosen by language and speed |
+| 🛠️ **Low-maintenance operations** | Runs as a Windows service that starts at boot and restarts after a crash; upgrade or roll back with one command |
+
+## Measured results
+
+All numbers come from real material on an RTX 2080 Ti (a modified 22 GB card); the test records are in the repository:
+
+- **82.7-minute multi-speaker meeting**: transcription, character-level alignment, and diarization took about 13 minutes in total, with peak VRAM around 10 GB. It fits on a 16 GB card.
+- **Paragraph quality**: before the rework, 240 segments were hard-cut at a fixed 84-character limit; afterwards there were none. 95.5% of paragraphs end with sentence-final punctuation, and no paragraph mixes two speakers.
+- **5-minute three-person conversation**: recognition, alignment, and diarization finished in about 83 seconds.
+- **Bilibili video with subtitles**: done in 3 seconds without entering the GPU queue.
+- **Never rewrites the text**: concatenating all segments in order reproduces the original recognised text character for character. This is an assertion checked on every run.
+
+## What it is good for
+
+- **Meeting and lecture notes**: transcribe a long recording in one go, split by speaker, and export Markdown straight into your notes.
+- **Video notes**: turn courses and interviews on Bilibili and YouTube into searchable, quotable text.
+- **Subtitles**: each SRT cue is one sentence, with timing accurate to the character.
+- **Giving AI agents ears**: an agent submits jobs through `/v1` and gets back structured results (full text, segments, paragraphs, speakers, source) to summarise, search, or answer questions over.
+
+BeeBox focuses on turning speech into reliable text. Proofreading, translation, and summaries are left to downstream apps or LLMs, which keeps the service small and stable.
+
+---
+
 ## Contents
 
-1. [What it is and what it is not](#1-what-it-is-and-what-it-is-not)
-2. [Technology choices and why](#2-technology-choices-and-why)
-3. [Architecture and why](#3-architecture-and-why)
-4. [Current limitations](#4-current-limitations)
-5. [Future directions](#5-future-directions)
-6. [Getting started](#6-getting-started)
-7. [Configuration, API, and development](#7-configuration-api-and-development)
+1. [Getting started](#getting-started)
+2. [AI agent deployment guide](#ai-agent-deployment-guide)
+3. [Technology choices and why](#technology-choices-and-why)
+4. [Architecture](#architecture)
+5. [Known limitations](#known-limitations)
+6. [Roadmap](#roadmap)
+7. [Configuration, API, and development](#configuration-api-and-development)
 
 > How problems were found, judged, and fixed during development is written up in the [fix and decision history](docs/history.md) (in Chinese). `#numbers` in the code and docs refer to issues in the private development repository; the mapping is in that document.
 
 ---
 
-## 1. What it is and what it is not
+## Getting started
 
-BeeBox is a **single-user backend service for personal use**. Its clients are Beer's home service (home), scripts, agents, and the console that ships with this repository.
+**Requirements**: Windows 11 x64, an NVIDIA GPU (CUDA-compatible, 16 GB VRAM recommended), [uv](https://docs.astral.sh/uv/) 0.12+, Git for Windows, and ffmpeg / ffprobe. uv provides Python 3.12 from the lock file.
 
-| Does | Does not |
-| --- | --- |
-| Speech transcription: audio / video files and single Bilibili or YouTube video links | Subtitle editing, version history, or transcript revision (revisions happen in Obsidian) |
-| Character-level timestamps and optional speaker diarization | Speaker identification (deciding who a speaker really is) |
-| Sentence-level segments plus paragraphs; TXT / Markdown / SRT exports | LLM processing such as proofreading, translation, summaries, or minutes (that belongs to clients) |
-| Download, load, unload, and delete local models | Online ASR, multi-tenancy, or exposure to the public internet |
+**Production install** (a Windows service that starts at boot and restarts after a crash). Run from the repository root in an elevated PowerShell:
 
-In one sentence: **BeeBox only turns speech into reliably timed text; everything else is left to its clients.** This boundary comes from [ADR-0008](docs/adr/0008-beebox-voice-service.md) and underlies every choice below.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 -ModelRoot D:\BeeBoxModels
+Invoke-RestMethod http://127.0.0.1:17494/v1/health
+```
+
+**Transcribe your first recording**:
+
+```powershell
+$h = @{ Authorization = "Bearer $env:BEEBOX_API_TOKEN" }
+$file = curl.exe -s -H "Authorization: Bearer $env:BEEBOX_API_TOKEN" -F "file=@meeting.m4a" http://127.0.0.1:17494/v1/files | ConvertFrom-Json
+$job = Invoke-RestMethod -Method Post -Headers $h -ContentType 'application/json' `
+  -Body (@{ source = @{ type = 'file'; file_id = $file.id } } | ConvertTo-Json) http://127.0.0.1:17494/v1/jobs
+Invoke-RestMethod -Headers $h http://127.0.0.1:17494/v1/jobs/$($job.id)            # poll until succeeded
+Invoke-RestMethod -Headers $h http://127.0.0.1:17494/v1/jobs/$($job.id)/exports/md # download Markdown
+```
+
+For a video link, set `source` to `@{ type = 'url'; url = 'https://www.bilibili.com/video/BV...' }`. You can also open `http://127.0.0.1:17494/console` to upload files, paste links, and watch progress and results.
+
+**Development or a quick run**:
+
+```powershell
+uv sync --frozen
+$env:BEEBOX_DATA_DIR = "D:\beebox-data"
+uv run python -m backend.server --host 127.0.0.1 --port 17494
+```
+
+Install parameters, directory layout, upgrades, and rollback are covered in [deploy/windows/README.md](deploy/windows/README.md) (in Chinese).
 
 ---
 
-## 2. Technology choices and why
+## AI agent deployment guide
 
-### 2.1 Product shape: an API-only backend, not a workbench
+Installing, upgrading, and verifying BeeBox is fully scripted, and every step has a result you can check. That makes it a good fit for coding agents such as Claude Code or Codex.
 
-The project's predecessor, Verbatim / asrbox, had a full web workbench with subtitle editing, AI proofreading, translation, chat, batch jobs, MCP, and more. Version 1.0 removed all of it and kept only the `/v1` API.
+### Prompt for the agent
 
-**Why**
-- Beer, the only heavy client, uses none of the workbench features; keeping them only grows the maintenance surface and misleads the agents that help develop the project.
-- LLM processing duplicated home's existing LLM pipeline, and keeping it in two places would make both harder to maintain.
-- The console became "just another client" that uses only the public API. This forces the API to be sufficient on its own, with no back-door endpoints.
+Open the agent on the target Windows machine and give it this:
 
-**Options considered**: keep extending the workbench (complete but unused), or remove only the UI and keep every backend capability (the API surface would still be huge).
+```text
+Please deploy BeeBox (https://github.com/HUA1255/beebox) on this Windows 11 machine.
+First read the "AI agent deployment guide" in README.en.md and deploy/windows/README.md in full, then follow the steps.
+Rules:
+1. Before any step that needs administrator rights, registers or changes a system service, or downloads several GB, tell me what you will do and wait for my confirmation.
+2. Confirm every step with the check described in the guide. If something fails, read the logs to find the cause; do not skip or work around a check.
+3. Never print, log, or commit the token in secrets\settings.env or any cookie.
+4. When done, report the installed version, the service status, the model status, and the result of the test job.
+```
 
-### 2.2 ASR baseline: Qwen3-ASR-1.7B + ForcedAligner + pyannote
+### Steps for the agent
+
+These steps are written for the agent. Each has a "Check"; move on only once it passes.
+
+**1. Inspect the environment (read-only)**
+
+```powershell
+[System.Environment]::OSVersion.Version   # Windows 11: build 22000 or later
+nvidia-smi                                 # shows an NVIDIA GPU and driver version
+uv --version                               # 0.12 or later
+git --version
+Get-PSDrive -PSProvider FileSystem         # keep at least 20 GB free on the install and model drives
+```
+
+Check: every command above produces normal output. If uv or Git is missing, tell the user and let them decide whether to install it.
+
+**2. Get the code and check out the latest release**
+
+```powershell
+git clone https://github.com/HUA1255/beebox.git
+cd beebox
+$tag = git describe --tags --abbrev=0
+git checkout $tag
+```
+
+Check: `git status` is clean and `$tag` looks like `v1.0.1`.
+
+**3. Prepare external tools and models**
+
+- ffmpeg / ffprobe: a directory or zip containing `ffmpeg.exe` and `ffprobe.exe`.
+- Deno 2.4.3+: a directory or zip containing `deno.exe` (needed for video links).
+- A model root, for example `D:\BeeBoxModels`. The alignment and diarization models must be placed there in advance:
+
+| Directory | Source | Required files |
+| --- | --- | --- |
+| `<model root>\models\qwen3-forced-aligner-0.6b` | Hugging Face `Qwen/Qwen3-ForcedAligner-0.6B-hf` | `config.json`, `processor_config.json` or `preprocessor_config.json`, `model.safetensors` |
+| `<model root>\models\pyannote-community-1` | Hugging Face `pyannote/speaker-diarization-community-1` (or a ModelScope mirror) | `config.yaml` and the sub-models it references |
+
+The recognition model (default `qwen3-asr-1.7b`) does not need manual preparation; it is downloaded through the API after installation (step 6).
+
+Check: all required files in the table exist.
+
+**4. Rehearse the install (changes nothing)**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 -DryRun
+```
+
+Check: exit code 0, the output lists every install step, and `C:\BeeBox` was not created.
+
+**5. Install for real (needs administrator rights; ask the user first)**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 `
+  -ModelRoot D:\BeeBoxModels -FfmpegSource <ffmpeg dir or zip> -DenoSource <deno dir or zip> -Tag $tag
+```
+
+Check:
+
+```powershell
+Get-Service BeeBox                                   # Status is Running
+Invoke-RestMethod http://127.0.0.1:17494/v1/health   # online and ready are True; version matches $tag
+```
+
+The installer generates a random token in `C:\BeeBox\secrets\settings.env`, which only administrators can read. Load it into the current session's environment without printing it:
+
+```powershell
+$env:BEEBOX_API_TOKEN = ((Get-Content C:\BeeBox\secrets\settings.env | Select-String '^BEEBOX_API_TOKEN=').Line -split '=', 2)[1]
+```
+
+**6. Download the recognition model and confirm model status**
+
+```powershell
+$h = @{ Authorization = "Bearer $env:BEEBOX_API_TOKEN" }
+Invoke-RestMethod -Method Post -Headers $h http://127.0.0.1:17494/v1/models/qwen3-asr-1.7b/download
+Invoke-RestMethod -Headers $h http://127.0.0.1:17494/v1/models/qwen3-asr-1.7b   # poll until the download finishes
+```
+
+Check: `GET /v1/models/qwen3-asr-1.7b` returns `downloaded` and `complete` as `True`, with an empty `missing_files`. Note that `ready` in `/v1/health` only means the database and storage are usable; use `/v1/models` to see whether the models are in place.
+
+**7. End-to-end acceptance**
+
+Take a 1–5 minute recording and use the commands in [Getting started](#getting-started) to upload it, create a job, poll, and fetch the result.
+
+Check: the job reaches `succeeded`, `/v1/jobs/{id}/result` contains segments and paragraphs, and `exports/txt`, `exports/md`, and `exports/srt` all download. Afterwards, delete the test job with `DELETE /v1/jobs/{id}`.
+
+**8. Optional features**
+
+- **Bilibili login**: scan the QR code on the "Platform credentials" page at `http://127.0.0.1:17494/console`. The user must scan it on their own phone.
+- **YouTube without login**: check out the bgutil provider as described under "YouTube 免登录与年龄限制 cookie" in [deploy/windows/README.md](deploy/windows/README.md).
+- **LAN access**: the service listens on `0.0.0.0:17494` by default; other machines call it with the same Bearer token. Do not expose it to the internet.
+
+**9. Upgrade and roll back**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag <new version> -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag <new version>
+```
+
+The deploy script pauses the queue and waits for the current job to finish, then switches the code, syncs dependencies, migrates the database, restarts the service, and finally checks that `/v1/health` reports the expected version and commit. To roll back, run it again with the previous tag.
+
+### When something goes wrong
+
+- Start with `C:\BeeBox\logs\beebox-server.log` and the WinSW logs in the same directory.
+- Common failures and fixes are listed under "故障排查" (troubleshooting) in [deploy/windows/README.md](deploy/windows/README.md).
+- Do not edit code in `C:\BeeBox\app` by hand. If that working tree is dirty, the next deployment refuses to run.
+
+---
+
+## Technology choices and why
+
+### Product shape: an API-only service
+
+BeeBox started from the open-source project [asrbox](https://github.com/Goldloli/asrbox) and has been almost entirely rewritten: the web workbench and LLM features were removed, and the service was redesigned around a single `/v1` job API.
+
+**Why API-only**
+- Transcription is a building block. It is most useful when other apps and agents can call it, not locked inside yet another workbench.
+- Proofreading, translation, and summaries fit better in downstream LLM pipelines. A service that does one thing can do it reliably.
+- The bundled console is "just another client" that uses only the public API, so the API has to be sufficient on its own, with no back doors.
+
+### ASR baseline: Qwen3-ASR-1.7B + ForcedAligner + pyannote
 
 | Stage | Choice | Why | Alternatives / why not |
 | --- | --- | --- | --- |
-| Speech recognition | **Qwen3-ASR-1.7B** (Apache-2.0, fp16) | Most material is Chinese meetings and lectures, where Qwen3-ASR is clearly more accurate | Whisper large-v3: mature ecosystem but weaker on Chinese; FireRedASR2: strong on Chinese but had thin tooling at the time |
-| Timestamps | **Qwen3-ForcedAligner-0.6B** | Qwen3-ASR does not produce precise timestamps itself; the aligner provides character-level ones for sentence splitting and subtitles | — |
-| Speaker diarization | **pyannote community-1** (ModelScope mirror) | Works on Chinese meetings in testing and needs no Hugging Face token | sherpa-onnx: lighter but untested, kept as a fallback; MOSS-Transcribe-Diarize: joint diarization, but it would replace the ASR baseline |
+| Speech recognition | **Qwen3-ASR-1.7B** (Apache-2.0, fp16) | Clearly more accurate on Chinese meetings and lectures | Whisper large-v3: mature ecosystem but weaker on Chinese; FireRedASR2: strong on Chinese but had immature tooling at the time |
+| Timestamps | **Qwen3-ForcedAligner-0.6B** | Qwen3-ASR does not produce precise timestamps itself; the aligner provides character-level ones | — |
+| Speaker diarization | **pyannote community-1** (ModelScope mirror available) | Proven on Chinese meetings, no Hugging Face token needed | sherpa-onnx: lighter dependencies but untested; MOSS-Transcribe-Diarize: joint diarization, but it would replace the ASR baseline |
 
-Recognition, alignment, and diarization run **as separate stages** rather than as one end-to-end model. Each stage can be replaced, can fail, and can be measured independently; the cost is that the stages must be stitched together (see [limitations](#4-current-limitations)).
+Recognition, alignment, and diarization run as **separate stages** rather than one end-to-end model. Each stage can be replaced, fail, and be measured independently; the cost is that the seams between stages have to be handled explicitly (see [Known limitations](#known-limitations)).
 
-The choice is backed by measurement: the [Gate 1 report](docs/spikes/0001-gate1.md) ran the full chain on a real 82.7-minute recording, peaking at about 8.6 GB of VRAM for ASR + alignment and about 1.6 GB for pyannote, which fits a 16 GB card. See [ADR-0001](docs/adr/0001-qwen3-asr-base.md) and [ADR-0005](docs/adr/0005-pyannote-diarization.md).
+The choice is backed by measurements: the [Gate 1 report](docs/spikes/0001-gate1.md) ran the full chain on an 82.7-minute real recording, with peak VRAM around 8.6 GB for ASR plus alignment and about 1.6 GB for pyannote. See [ADR-0001](docs/adr/0001-qwen3-asr-base.md) and [ADR-0005](docs/adr/0005-pyannote-diarization.md).
 
-### 2.3 A multi-model catalog: optional models beyond the baseline
+### Model catalog: beyond the baseline, pick what fits
 
-Besides the baseline, the service registers a set of local models for different languages and speed needs:
-
-- **Whisper family**: five sizes each on transformers and faster-whisper (CTranslate2), including Distil-Whisper (English only)
+- **Whisper family**: five sizes each under transformers and faster-whisper (CTranslate2), including Distil-Whisper (English only)
 - **Chinese-first**: SenseVoice Small, Paraformer-large, Fun-ASR-Nano, FireRedASR2-AED 1.1B
-- **Multilingual speech-LMs**: Qwen3-ASR 0.6B/1.7B, Granite Speech 4.1, Cohere Transcribe, ARK-ASR, Voxtral Mini
+- **Multilingual speech-LMs**: Qwen3-ASR 0.6B / 1.7B, Granite Speech 4.1, Cohere Transcribe, ARK-ASR, Voxtral Mini
 - **Joint diarization**: MOSS-Transcribe-Diarize 0.9B
 - **NeMo (optional runtime)**: Parakeet TDT 0.6B v3, Canary 1B Flash
 
-**Why not a single model**: no model is best for every language, duration, and speed. In measurements, Paraformer was the fastest model in the catalog (RTF ≈ 0.1), while Distil-Whisper only suits English and "hallucinates" English on Chinese audio. Every catalog entry **states honestly** its language coverage, timestamp / speaker capabilities, and supported devices, so clients can choose.
+**Why more than one model**: no model is best across every language, duration, and speed. In our measurements Paraformer is the fastest in the catalog (RTF ≈ 0.1), while Distil-Whisper only suits English and produces made-up English when fed Chinese. Every model **states its real capabilities**: language coverage, timestamp and speaker support, and supported devices, so callers can choose.
 
-**Why weights are not in the repository or the installer**: weights run to several GB each and carry different licenses (Apache-2.0, MIT, CC-BY-4.0, vendor model licenses). They are downloaded on demand from ModelScope / Hugging Face, with attribution maintained in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). See the [model guide](docs/models.md) and the [model roadmap](docs/asr-models-roadmap.md).
+**Why weights are not in the repository**: weights run to several GB each and carry different licenses (Apache-2.0, MIT, CC-BY-4.0, vendor model licenses). They are downloaded on demand from ModelScope / Hugging Face, with attribution maintained in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). See the [model guide](docs/models.md) and the [model roadmap](docs/asr-models-roadmap.md).
 
-### 2.4 Deployment: a native Windows service, not Docker
+### Deployment: a native Windows service
 
 | Choice | Why |
 | --- | --- |
-| Native Windows 11 + a **uv**-locked venv | The GPU machine runs Windows anyway; GPU containers on Windows go through WSL, and maintaining an unused container setup would mean verifying every change in two environments |
-| Hosted as a system service by **WinSW** | Starts at boot and restarts 5 seconds after a crash; the previous "scheduled task + PowerShell wrapper" did not recover from crashes |
-| Deployed by **git tag** | Production code cannot silently drift from main, and rolling back means switching tags |
-| Console build output `console/dist` committed to the repository | The production machine needs no Node; there is a single port, and CI checks the build output matches the source |
+| Native Windows 11, dependencies locked by **uv** | Most consumer GPU machines run Windows. GPU access from Docker on Windows goes through WSL, the image exceeds 20 GB, and it adds a layer to every investigation |
+| Hosted as a system service by **WinSW** | Starts at boot, needs no login, restarts 5 seconds after a crash |
+| Deploy by **git tag** | Production always runs a clearly identified version, and rolling back means switching to another tag |
+| The console build `console/dist` is committed | The production machine needs no Node, and the service uses a single port; CI checks the build matches the source |
 
-Development happens on the same machine, so **the dev and production instances are strictly isolated**: separate directories, ports (17495 vs 17494), data, and tokens, with the model directory shared read-only. See [ADR-0010](docs/adr/0010-windows-native-deployment.md).
+Development can happen on the same machine: **development and production instances are strictly isolated**, with separate directories, ports (17495 vs 17494), data, and tokens, while the model directory is shared read-only. See [ADR-0010](docs/adr/0010-windows-native-deployment.md).
 
-### 2.5 Stack
+### Technology stack
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Web framework | FastAPI + Uvicorn | Generates OpenAPI natively, so the contract can become a snapshot test; Pydantic handles validation uniformly |
-| Storage | SQLite (SQLAlchemy) + a local data directory | Single user, single machine; no separate database process needed, and backup is copying a directory |
-| Inference | PyTorch / transformers / CTranslate2 / FunASR | Covers the official inference paths of every model in the catalog |
-| Media | ffmpeg / ffprobe | The de facto standard with the broadest format coverage |
-| Video links | yt-dlp + bgutil (YouTube PO tokens) + bilibili-api (QR login) | Gets platform subtitles and high-quality audio tracks; versions pinned |
-| Dependency management | uv + `uv.lock` | Reproducible and fast; production and development share one lock |
-| Console | React + Vite + TypeScript, Playwright end-to-end tests | A lightweight SPA that reads only the public API |
+| Web framework | FastAPI + Uvicorn | Generates OpenAPI natively, so the contract can be a snapshot test; Pydantic validates everything |
+| Storage | SQLite (SQLAlchemy) + a local data directory | A single machine needs no separate database process; backup means copying a directory |
+| Inference | PyTorch / transformers / CTranslate2 / FunASR | The official inference paths for every model in the catalog |
+| Media | ffmpeg / ffprobe | The de facto standard with the widest format coverage |
+| Video links | yt-dlp + bgutil (YouTube PO tokens) + bilibili-api (QR login) | Gets platform subtitles and high-quality audio tracks; versions are pinned |
+| Dependency management | uv + `uv.lock` | Reproducible and fast; production and development share the same lock file |
+| Console | React + Vite + TypeScript, Playwright end-to-end tests | A lightweight single-page app that uses only the public API |
 
-### 2.6 Security and data: a LAN token, media deleted after use
+### Security and data
 
-- BeeBox listens on a LAN / Tailscale address for home, so **it refuses to start on a non-loopback address without a Bearer token**; tokens in URL query parameters are not accepted.
-- Browsers or players that cannot send headers download through 60-second, single-use, path-bound tickets.
-- **Source media and temporary audio are deleted as soon as a job succeeds**; results are kept for 30 days by default. home already stores originals on the NAS and results in Obsidian, so BeeBox does not provide long-term storage.
-- Download credentials (Bilibili and YouTube cookies) are **write-only** for clients: the API never echoes them, logs never record them, and they never enter the database.
+- On a non-loopback address the service **refuses to start without a Bearer token**, so it never ends up open on your LAN by accident; tokens in URL query parameters are not accepted, which keeps them out of logs.
+- When a browser or media player cannot send headers, it uses a ticket that is valid for 60 seconds, single-use, and bound to one path.
+- **Source media and temporary audio are deleted as soon as a job succeeds**; results are kept for 30 days by default, then cleaned up automatically.
+- Platform credentials for downloads (Bilibili and YouTube cookies) are **write-only**: never echoed by the API, never logged, never stored in the database.
 
 See [ADR-0011](docs/adr/0011-lan-token-and-retention.md) and [Privacy and local data](docs/privacy.md).
 
 ---
 
-## 3. Architecture and why
+## Architecture
 
-### 3.1 Layered overview
+### Layered overview
 
 ```mermaid
 flowchart TB
     subgraph Clients[Clients]
-        home[Beer · home service]
-        script[Scripts / agents]
+        app[Your app / service]
+        script[Scripts / AI agents]
         console[Console /console]
     end
 
@@ -137,12 +317,12 @@ flowchart TB
     end
 
     subgraph Services[Service layer (backend/services)]
-        tasks[Job lifecycle: tasks]
-        video[Video links: video_jobs]
-        gpuq[GPU queue: gpu_queue<br/>FIFO · concurrency 1]
-        pipeline[Media → chunks → merge → postprocess<br/>→ segments → paragraphs → exports]
-        mgr[Model management: models]
-        ret[Retention cleanup: retention]
+        tasks[Job lifecycle tasks]
+        video[Video links video_jobs]
+        gpuq[GPU queue gpu_queue<br/>FIFO · concurrency 1]
+        pipeline[Media → chunks → merge → post-processing<br/>→ segments → paragraphs → export]
+        mgr[Model management models]
+        ret[Retention cleanup retention]
     end
 
     subgraph Engine[SpeechEngine boundary]
@@ -158,202 +338,151 @@ flowchart TB
     API --> Services
     tasks --> gpuq --> pipeline
     video -->|platform subtitles: no GPU| pipeline
-    video -->|no subtitles: audio only| gpuq
+    video -->|no subtitles: audio track only| gpuq
     pipeline --> Engine
     local --> worker --> backends
     Services --> store
 ```
 
-### 3.2 The path of one transcription job
+### How a transcription job flows
 
 ```text
 POST /v1/files (streaming upload)
   └─ POST /v1/jobs  → status queued, enters the GPU queue
        └─ preprocessing   ffprobe preflight + ffmpeg conversion to a uniform WAV
        └─ waiting_model   download / load the model when needed
-       └─ transcribing    long audio is cut into chunks (120 s window, 2 s overlap),
-                          inferred chunk by chunk, with progress stored
-                          → forced alignment yields character-level timestamps
-                          → cross-chunk merge and de-duplication
-       └─ diarize         (optional) pyannote diarization, then speakers assigned to text
-       └─ postprocess     sentence-level segments (sentence-final punctuation > pause > length cap)
-                          → same-speaker segments grouped into paragraphs
+       └─ transcribing    long audio is split into 120 s windows with 2 s overlap, inferred chunk by chunk, progress saved
+                          → forced alignment produces character-level timestamps
+                          → merge and deduplicate across chunks
+       └─ diarize         (optional) pyannote speaker diarization, then assign speakers to the text
+       └─ post-processing sentence-level segments (sentence-final punctuation > pause > length cap) → paragraphs per speaker
        └─ exporting       TXT / Markdown by paragraph, SRT by segment
-  └─ succeeded: source media and temporary audio deleted, result kept for 30 days
+  └─ succeeded: delete source media and temporary audio; keep results for 30 days
 ```
 
-A video-link job decides its path before queueing: if the platform has a usable manual or automatic subtitle track, it is converted directly into the same segments and paragraphs and **never touches the GPU**; only when no usable subtitle exists, or the client sends `prefer=asr`, is the audio track downloaded and run through the ASR flow above.
+A video-link job decides its path before it is queued: if the platform has usable manual or automatic subtitles, they are converted directly into the same segments and paragraphs, **without using the GPU at all**. Only when no usable subtitles exist, or the caller sets `prefer=asr`, is the audio track downloaded and run through the recognition pipeline above.
 
-### 3.3 Key design decisions and why
+### Key design decisions
 
-**① All capabilities share one job resource and one GPU queue** ([ADR-0009](docs/adr/0009-unified-job-api.md))
+**① Every capability shares one job resource and one GPU queue** ([ADR-0009](docs/adr/0009-unified-job-api.md))
 
-- The machine has a single 16 GB GPU. Two processes loading models on their own would OOM each other, so **one process must queue all work and own all model loading and unloading**.
-- The queue is strictly first-in-first-out with a concurrency of one and can be paused: the current job finishes, new jobs keep queueing, and resuming continues where it left off. Deployments and real-model tests pause the production queue first.
-- Externally there is only `/v1/jobs` (capabilities distinguished by `kind`) and `/v1/files`. Adding TTS later is just another `kind`; jobs, progress, files, auth, and model management are reused, and clients write one polling loop.
-- There are only five public states: `queued / running / succeeded / failed / cancelled`. Details live in `stage`, `progress`, `error_code`, and `retryable`. Errors share the shape `{detail, error_code, stage}`. The client's state machine stays simple while internal stages are free to evolve.
+- On a single 16 GB card, two processes loading models independently would run each other out of VRAM, so **one process owns queueing and model loading and unloading**.
+- The queue is strictly first-in-first-out with concurrency 1, and it can be paused: the current job finishes, new jobs keep queueing, and work resumes when the queue does. The queue is paused before deployments and real-model tests.
+- The public surface is just `/v1/jobs` (with `kind` selecting the capability) and `/v1/files`. Adding text-to-speech later means adding one more `kind`; jobs, progress, files, auth, and model management are all reused, and callers keep a single polling loop.
+- There are only five public states: `queued / running / succeeded / failed / cancelled`. Details live in `stage`, `progress`, `error_code`, and `retryable`, and every error has the same shape `{detail, error_code, stage}`. The caller's state machine stays simple while internal stages are free to evolve.
 
 **② SpeechEngine: the only boundary between the pipeline and the models**
 
-The pipeline never imports a model runtime directly; it builds a `SpeechRequest` and consumes a `TranscriptionResult`. Behind the boundary are two implementations:
+The pipeline never imports a model runtime directly; it builds a `SpeechRequest` and consumes a `TranscriptionResult`. Behind the boundary are two implementations: `local` wires up the real recognition, alignment, and diarization models; `fake` is a scripted double that returns preset segments, speakers, or failures.
 
-- `local`: the real ASR backends, aligner, and pyannote;
-- `fake`: a scripted stand-in that returns preset segments, speakers, or failures.
-
-**Why**: the genuinely complex logic (chunking, merging, postprocessing, paragraphs, exports) can be tested with real code on CI **without a GPU, models, or network**. That is how the default test suite runs; real-model tests run separately.
+As a result, the genuinely complex logic (chunking, merging, post-processing, paragraphs, export) is tested with real code in CI with **no GPU, no models, and no network**.
 
 **③ Inference runs in a separate subprocess with a liveness heartbeat**
 
-- Model crashes, VRAM leaks, and CUDA deadlocks cannot take down the API process; the process exits when the job ends, so VRAM is always fully released.
-- A live process is not a working process: a deadlocked inference keeps running. The worker reports its accumulated CPU time as a heartbeat, and is judged stalled and terminated only when the heartbeat freezes or a hard limit passes with no output. Slow chunks are not killed by mistake, and wedged ones do not hold the queue forever.
+- A model crash, a VRAM leak, or a CUDA deadlock cannot take down the API process, and when a job ends the subprocess exits, so VRAM is always fully released.
+- A live process is not necessarily a working one: a deadlocked inference process is still alive. The worker reports its accumulated CPU time as a heartbeat; only when the heartbeat stops growing, or a hard limit passes with no output, is it judged stalled and terminated. Slow chunks are not killed by mistake, and stuck chunks do not hold the queue forever.
 
-**④ Chunking with per-chunk persistence enables resume**
+**④ Chunks saved as they finish, with resume from the last chunk**
 
-Long recordings are cut into 120-second chunks with 2 seconds of overlap, and each chunk's result and state are written to the database. After a restart or crash, a job continues from the last finished chunk, and queued jobs are restored. For an 80-minute recording, that means re-running at most two minutes instead of starting over.
+Long recordings are split into 120-second chunks with 2 seconds of overlap, and each chunk's result and state are written to the database. After a restart or crash, a job resumes from the last completed chunk, and queued jobs are restored in their original order. For an 80-minute recording, a failure costs at most two minutes of rework instead of starting over.
 
-**⑤ Two levels of text structure: segments and paragraphs** ([ADR-0007](docs/adr/0007-paragraph-contract.md))
+**⑤ Two levels of text: segments and paragraphs** ([ADR-0007](docs/adr/0007-paragraph-contract.md))
 
-- A **segment** is close to one sentence, belongs to one speaker, and is the unit of subtitles and timing (one SRT cue per segment).
-- A **paragraph** groups several segments from the same speaker, targets 10–120 seconds, and is the unit of reading and export (TXT / Markdown render by paragraph).
+- A **segment** is roughly one sentence, belongs to one speaker, and is the unit of subtitles and timing (one SRT cue per segment).
+- A **paragraph** groups consecutive segments from the same speaker, targets 10 to 120 seconds, and is the unit of reading and export (TXT / Markdown are written by paragraph).
 
-**Why two levels**: subtitles need to be short and reading needs to be long. With only one level, either a subtitle cue spans several lines or the reading transcript breaks into one sentence per line.
+Subtitles need to be short and reading needs to be long. With only one level, either one subtitle spans several lines or the reading text breaks into one sentence per line.
 
-**⑥ The contract is a snapshot**
+**⑥ The API contract is a snapshot**
 
-`openapi.json` at the repository root is a committed snapshot of the API, and `backend/tests/test_openapi_snapshot.py` fails whenever the implementation and snapshot differ. Compatibility is guarded by a test, not by documentation discipline. Changing a route or model means explicitly regenerating and committing the snapshot, so the diff is obvious in review.
+`openapi.json` at the repository root is a committed snapshot of the API, and tests fail when the implementation drifts from it. Compatibility is guarded by tests rather than by remembering to update docs, and every API change shows up clearly in the review diff.
 
-**⑦ Polling only, no webhooks**
+**⑦ Polling first, no webhooks**
 
-Clients poll `GET /v1/jobs/{id}` as the standard method, with SSE as an option. Polling is enough for a single user, and webhooks would bring callback addresses, retries, and auth, which is not worth the complexity.
+Polling `GET /v1/jobs/{id}` is the standard approach, with an optional SSE event stream. Polling is simple and reliable, while webhooks would bring callback addresses, retries, and auth, which is not worth the complexity.
 
-### 3.4 Repository layout
+### Directory layout
 
 ```text
 backend/
   v1/                  /v1 routes, request/response schemas, error codes
-  services/            job lifecycle, GPU queue, media and chunking, merging, postprocessing,
-                       segments/paragraphs, exports, model management, video platforms,
-                       Bilibili login, retention cleanup
-  backends/            model registry (registry) and local ASR engine dispatch (local_asr)
+  services/            job lifecycle, GPU queue, media and chunking, merging, post-processing,
+                       segments/paragraphs, export, model management, video platforms, Bilibili login, retention
+  backends/            model registry and local ASR engine dispatch (local_asr)
   database/            SQLite models and migrations
   vendor/fireredasr2/  minimal FireRedASR2 inference code (upstream Apache-2.0)
-  tests/               default tests (fake engine, fake platforms, no GPU or network)
-  real_tests/          real-model / real-platform tests and recorded results
-console/               console source (React) and committed build output dist/
+  tests/               default tests (fake engine and platforms, no GPU or network)
+  real_tests/          real-model / real-platform tests and result records
+console/               console source (React) and its committed build in dist/
 deploy/windows/        install, deploy, and dev-instance scripts plus the WinSW template
-docs/                  ADRs, model guide, privacy, CI, roadmap, spike reports
+docs/                  ADRs, model guide, privacy, CI, roadmap, spike report, fix history
 openapi.json           API contract snapshot
 ```
 
 ---
 
-## 4. Current limitations
+## Known limitations
 
-### Runtime and deployment
-- **Only one supported shape: Windows 11 + an NVIDIA GPU.** macOS / Linux work for development and some model verification but are not supported production environments.
-- **One GPU, one queue, concurrency of one.** There are no priorities, so a long job blocks every GPU job behind it. Only subtitle-based video jobs bypass the queue.
-- **One user, one token.** No multiple users, permission levels, or quotas; not suitable for public exposure.
-- **Polling only**: no webhooks, and SSE is optional.
-
-### Recognition quality
-- **Diarization stitching issues remain:** pyannote tends to over-split short interjections and hosts (one person split into several labels), speaker changes can cut a sentence in two, and overlapping speech may be attributed incorrectly.
-- **General forced alignment is not done yet:** models without native timestamps (such as Fun-ASR-Nano, Cohere Transcribe, and base Granite Speech 4.1) only get segment-level timing or none at all, and cannot be uniformly upgraded to character level.
-- **No real-time / streaming transcription**; only offline file processing.
-- **Accuracy and speed findings hold only for the verified machines and dependency versions**; other hardware or upstream upgrades may behave differently.
-- No speaker identification; speakers are anonymous numbers only.
-
-### Models
-- **NeMo models (Parakeet, Canary) have passed only unit and contract tests and have not been verified on real CUDA hardware**, and `nemo_toolkit` is not in the default dependencies.
-- FireRedASR2 accepts at most 60 seconds per input and relies on VAD splitting; Distil-Whisper supports English only.
-- Some model sources (such as gated Hugging Face models) need extra authorization or a mirror fallback.
-
-### Video platforms
-- **Bilibili login needs a fresh QR scan roughly every 180 days.** Credentials from the TV channel cannot be renewed through the web API, so BeeBox only detects expiry and home sends an email reminder ([ADR-0012](docs/adr/0012-bilibili-login-refresh.md)).
-- Bilibili and YouTube integrations rely on undocumented APIs and can break when the platforms change; age-restricted YouTube videos need an uploaded cookie.
-
-### Data and results
-- **Transcripts cannot be changed once produced**; the server has no revision API.
-- **Source media is deleted after success**: if a failed job's source media has already been cleaned up, it must be resubmitted.
-- Exports are limited to TXT / Markdown / SRT; there is no DOCX or VTT.
-
-### Licensing and engineering
-- `bilibili-api-python` and bgutil are **GPL-3.0**, so the whole project is released under GPL-3.0 to stay compatible with them.
-- `services/tasks.py` (about 2,500 lines) and `backends/local_asr.py` (about 1,700 lines) are large and are the main refactoring targets.
+- **Platform**: Windows 11 + NVIDIA GPU is currently the only supported production environment. macOS / Linux can be used for development and some model verification.
+- **Queue**: one GPU, one queue, concurrency 1, no priorities; a long job blocks the GPU jobs behind it. Video jobs with platform subtitles are not affected.
+- **Users**: a single token, with no multiple users, permission levels, or quotas. Not suitable for exposure to the internet.
+- **Diarization**: short interjections and hosts can be split into several labels, speaker changes can cut a sentence in two, and overlapping speech may be attributed inaccurately.
+- **Timestamps**: models that do not emit timestamps natively (such as Fun-ASR-Nano and Cohere Transcribe) currently get only segment-level timing.
+- **Real time**: no streaming or real-time transcription; only files and links.
+- **Models**: NeMo models (Parakeet, Canary) have not been verified on real CUDA hardware; FireRedASR2 accepts at most 60 seconds per input; some Hugging Face models need extra authorisation or a mirror.
+- **Video platforms**: Bilibili and YouTube integrations rely on undocumented APIs and can break when the platforms change. Bilibili login needs a fresh QR scan roughly every 180 days ([ADR-0012](docs/adr/0012-bilibili-login-refresh.md)); age-restricted YouTube videos need an uploaded cookie.
+- **Results**: transcripts cannot be edited once produced; exports are TXT / Markdown / SRT.
 
 ---
 
-## 5. Future directions
+## Roadmap
 
-Roughly in priority order. Plans in progress are tracked in GitHub Issues; model expansion is covered in the [model roadmap](docs/asr-models-roadmap.md).
+Model expansion is covered in the [model roadmap](docs/asr-models-roadmap.md).
 
-### Near term: close quality gaps
-- **General forced-alignment postprocessing**: after any model without timestamps finishes, optionally run alignment to upgrade the result to segments with a character-level timeline. Alignment failure does not affect the success of the base transcription. One investment that benefits every model.
-- **Diarization postprocessing**: merge short turns, stabilize speaker labels, mark overlapping speech, and smooth sentence boundaries at speaker changes.
+**Near term: closing quality gaps**
+- **General-purpose forced alignment**: any model that does not emit timestamps can run an alignment pass after transcription and get character-level timing. One investment, and every model benefits.
+- **Diarization post-processing**: merge very short turns, stabilise speaker labels, mark overlapping speech, and smooth sentence boundaries at speaker changes.
 - **Real CUDA verification of the NeMo models**, to decide whether Parakeet / Canary join the official catalog.
 
-### Mid term: new capabilities on the same skeleton
-- **Text-to-speech (TTS)**: added as a new `kind` under `/v1/jobs`, sharing files, jobs, the GPU queue, and model management with transcription (the original intent of ADR-0009). A separate service is considered only if dependencies truly cannot coexist.
-- **A thin MCP layer**: when needed, a thin MCP adapter on top of `/v1`, without reimplementing capabilities inside the service.
-- **More candidate models**: Granite Speech 5 (CTC), granite-speech-4.1-2b-nar (high throughput), Canary-1B-v2, Voxtral Small 24B, and others, each evaluated on honest capability claims, license compliance, and manageable size.
+**Medium term: new capabilities on the same backbone**
+- **Text-to-speech (TTS)**: added as a new `kind` under `/v1/jobs`, sharing files, jobs, the GPU queue, and model management with transcription.
+- **MCP adapter**: a thin MCP layer on top of `/v1` so AI agents can call BeeBox without writing code.
+- **More models**: Granite Speech 5, Canary-1B-v2, Voxtral Small 24B, and others, each evaluated on honest capability claims, license compliance, and manageable size.
 
-### Long term: only if needed
-- Queue priorities or preemption (for example, letting short jobs jump ahead), as long as the single-GPU VRAM constraint still holds.
+**Longer term**
+- Queue priorities or preemption (for example, letting short jobs jump ahead).
 - Streaming / near-real-time transcription.
-- Splitting `tasks.py` and `local_asr.py` so each pipeline stage is easier to test and replace on its own.
-
-**Will not do**: workbench-style subtitle editing, LLM proofreading / translation / summaries, or speaker identification. These belong to clients; see [ADR-0008](docs/adr/0008-beebox-voice-service.md).
+- Splitting the two large modules `services/tasks.py` and `backends/local_asr.py` so each pipeline stage is easier to test and replace on its own.
 
 ---
 
-## 6. Getting started
-
-**Requirements**: Windows 11 x64, an NVIDIA GPU (CUDA-compatible), Python 3.12 (64-bit) with [uv](https://docs.astral.sh/uv/), and `ffmpeg` / `ffprobe` (on `PATH` or in the service tools directory).
-
-**Production install** (WinSW service, starts at boot, restarts after crashes); see [deploy/windows/README.md](deploy/windows/README.md):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 -ModelRoot <existing model storage root>
-```
-
-**Development or ad-hoc run**:
-
-```powershell
-uv sync --frozen
-$env:BEEBOX_DATA_DIR = "D:\beebox-data"
-uv run python -m backend.server --host 127.0.0.1 --port 17494
-curl.exe http://127.0.0.1:17494/v1/health
-```
-
-For a dev instance, use `deploy\windows\dev-instance.ps1` (port 17495, isolated from production); see [AGENTS.md](AGENTS.md).
-
----
-
-## 7. Configuration, API, and development
+## Configuration, API, and development
 
 ### Environment variables
 
-| Variable | Description |
+| Variable | Purpose |
 | --- | --- |
 | `BEEBOX_DATA_DIR` | Data directory: database, uploads, derived audio, exports, and caches |
-| `BEEBOX_API_TOKEN` | Bearer token; required when listening on a non-loopback address, and once set every `/v1` endpoint except health requires it |
+| `BEEBOX_API_TOKEN` | Bearer token; required on a non-loopback address, and once set every `/v1` endpoint except health requires it |
 | `BEEBOX_MODEL_STORAGE_ROOT` | Storage root for models and framework caches |
-| `BEEBOX_RETENTION_DAYS` | Days to keep results, 30 by default |
-| `BEEBOX_DOWNLOAD_PROXY` | HTTP(S) proxy for video metadata, subtitle, and audio downloads; direct connection if unset, and the proxy address is never written to results or logs |
+| `BEEBOX_RETENTION_DAYS` | Days to keep results, default 30 |
+| `BEEBOX_DOWNLOAD_PROXY` | HTTP(S) proxy for video metadata, subtitle, and audio downloads; direct connection when unset, and the proxy address never appears in results or logs |
 
-See `.env.example` for an example. The service does **not** read `.env` automatically; export the variables into the environment before starting.
+See `.env.example`. The service does **not** read `.env` automatically; export the variables into the environment before starting it.
 
 ### Common endpoints
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /v1/health` | Liveness, readiness, version, GPU, queue, and Bilibili login status |
-| `POST /v1/files` | Streaming upload; returns the file id and metadata |
+| `GET /v1/health` | Online, ready, version, GPU, queue, and Bilibili login status |
+| `POST /v1/files` | Streaming upload; returns a file id and metadata |
 | `POST /v1/jobs` | Create a job from a file or a video link |
-| `GET /v1/jobs` · `GET /v1/jobs/{id}` | Job list / state, stage, and progress |
+| `GET /v1/jobs` · `GET /v1/jobs/{id}` | Job list / status, stage, and progress |
 | `GET /v1/jobs/{id}/result` | Structured result (full text, segments, paragraphs, speakers, source) |
-| `GET /v1/jobs/{id}/exports/{fmt}` | Export as `txt` / `md` / `srt` |
-| `GET /v1/models` | Local model status, download, unload, and delete |
-| `GET /v1/queue` | GPU queue status; `/pause` and `/resume` control the queue |
+| `GET /v1/jobs/{id}/exports/{fmt}` | Export `txt` / `md` / `srt` |
+| `GET /v1/models` | Local model status; download, cancel, retry, unload, and delete |
+| `GET /v1/queue` | GPU queue status; `/pause` and `/resume` control it |
+| `GET /v1/errors` | Every error code with its meaning and whether it is retryable |
 
 The full contract is in [`openapi.json`](openapi.json). After changing routes or models, regenerate and commit it:
 
@@ -368,7 +497,7 @@ uv run pytest backend/tests -q          # default tests: fake engine and platfor
 cd console; npm ci; npm run build       # after changing console source, rebuild and commit console/dist
 ```
 
-Real-model tests require your own lawfully obtained media and pre-downloaded models, and are not part of the default suite.
+Real-model tests require your own lawfully obtained media and pre-downloaded models, and are not part of the default suite. Every PR runs the full CI on `windows-latest`; see [docs/ci.md](docs/ci.md).
 
 ### Further reading
 
@@ -381,4 +510,4 @@ Real-model tests require your own lawfully obtained media and pre-downloaded mod
 
 ## License
 
-The source code is licensed under [GPL-3.0](LICENSE) (GPL-3.0-only), copyright Feng. The project started from the MIT-licensed asrbox 0.4.0 and has since been largely rewritten; upstream attribution is in [NOTICE.md](NOTICE.md). FFmpeg, models, and other third-party components are governed by their own licenses; model weights are not distributed with the repository.
+The source code is licensed under [GPL-3.0](LICENSE) (GPL-3.0-only), copyright Feng. The project started from the MIT-licensed asrbox 0.4.0; upstream attribution is in [NOTICE.md](NOTICE.md). FFmpeg, models, and other third-party components are governed by their own licenses; model weights are not distributed with the repository.
