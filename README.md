@@ -1,8 +1,11 @@
 <div align="center">
 
-# BeeBox
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+  <img src="docs/assets/banner-light.png" alt="BeeBox：把声音变成可靠的文字。音频、视频和 B 站 / YouTube 链接经过识别、字符级对齐、说话人分离，变成带时间戳和说话人的转写稿" width="100%">
+</picture>
 
-**把声音变成可靠的文字。本地运行的语音转写服务。**
+**本地运行的语音转写服务。**
 
 录音、视频文件、B 站 / YouTube 链接，进去的是声音，出来的是带字符级时间戳、说话人和自然段落的转写稿。<br>
 一块消费级显卡就能跑，模型和数据都留在你自己的机器上。

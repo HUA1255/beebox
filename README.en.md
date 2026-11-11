@@ -1,8 +1,11 @@
 <div align="center">
 
-# BeeBox
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+  <img src="docs/assets/banner-light.png" alt="BeeBox: speech in, trustworthy text out. Audio, video, and Bilibili / YouTube links go through recognition, character-level alignment, and speaker diarization to become a transcript with timestamps and speakers" width="100%">
+</picture>
 
-**Turn speech into text you can trust. A speech transcription service that runs on your own machine.**
+**A speech transcription service that runs on your own machine.**
 
 Recordings, video files, Bilibili and YouTube links go in. Transcripts with character-level timestamps, speakers, and natural paragraphs come out.<br>
 It runs on a single consumer GPU, and your models and data never leave your machine.

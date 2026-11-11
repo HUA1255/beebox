@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>BeeBox banner</title>
+<!--
+  README 宣传横幅的源文件。1280×640，浅色 / 深色两套主题。
+  重新生成 PNG（在仓库根目录执行）：
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+      --force-device-scale-factor=2 --window-size=1280,640 \
+      --screenshot=docs/assets/banner-light.png "file://$PWD/docs/assets/banner.html?theme=light"
+  深色版把 light 换成 dark。
+-->
+<style>
+  :root {
+    --bg: #fbf8f2;
+    --bg-glow: rgba(245, 166, 35, 0.16);
+    --ink: #1c1a17;
+    --muted: #6b655c;
+    --line: #e7e0d4;
+    --card: #ffffff;
+    --card-shadow: 0 24px 60px rgba(60, 40, 10, 0.12), 0 2px 6px rgba(60, 40, 10, 0.06);
+    --chip: #f3ede3;
+    --honey: #e8930c;
+    --honey-soft: #fff1d9;
+    --wave: #e8930c;
+    --s1: #e8930c;
+    --s2: #0f9d8a;
+    --s3: #7c5cdb;
+    --time: #9a9184;
+  }
+  :root[data-theme="dark"] {
+    --bg: #111214;
+    --bg-glow: rgba(245, 166, 35, 0.14);
+    --ink: #f3efe7;
+    --muted: #a39d93;
+    --line: #2a2b2f;
+    --card: #1a1b1f;
+    --card-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px #2a2b2f;
+    --chip: #222328;
+    --honey: #f5a623;
+    --honey-soft: #2c2416;
+    --wave: #f5a623;
+    --s1: #f5a623;
+    --s2: #2cc4ad;
+    --s3: #a48af0;
+    --time: #7d786f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(900px 500px at 92% -10%, var(--bg-glow), transparent 60%),
+      radial-gradient(700px 420px at -5% 110%, var(--bg-glow), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+  .hex-bg {
+    position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    position: absolute; left: 72px; top: 58px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .logo { width: 64px; height: 64px; }
+  .brand h1 {
+    font-size: 46px; font-weight: 800; letter-spacing: -1px; line-height: 1;
+  }
+  .brand h1 span { color: var(--honey); }
+  .brand p {
+    margin-top: 10px; font-size: 22px; font-weight: 600; color: var(--ink);
+  }
+  .brand p em {
+    font-style: normal; color: var(--muted); font-weight: 500; font-size: 17px; margin-left: 12px;
+    letter-spacing: .2px;
+  }
+
+  /* ---------- left: sources ---------- */
+  .sources {
+    position: absolute; left: 72px; top: 214px; width: 360px;
+  }
+  .label {
+    font-size: 13px; font-weight: 700; letter-spacing: 2px; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .wave { width: 360px; height: 120px; display: block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 14px; border-radius: 18px;
+    background: var(--chip); border: 1px solid var(--line);
+    font-size: 15px; font-weight: 600; color: var(--ink);
+  }
+  .chip svg { width: 16px; height: 16px; flex: none; }
+  .chip .ext { color: var(--muted); font-weight: 500; }
+
+  /* ---------- middle: engine ---------- */
+  .engine {
+    position: absolute; left: 458px; top: 214px; width: 132px;
+  }
+  .steps {
+    position: relative; display: flex; flex-direction: column; gap: 14px; width: 132px;
+  }
+  .steps::before {
+    content: ""; position: absolute; left: 50%; top: 18px; bottom: 18px; width: 0;
+    border-left: 2.5px dashed var(--honey); opacity: .55; z-index: 0;
+  }
+  .out { position: absolute; left: 136px; top: 108px; width: 22px; height: 40px; }
+  .step {
+    position: relative; z-index: 1;
+    height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: var(--honey);
+    background: var(--honey-soft); border: 1px solid color-mix(in srgb, var(--honey) 35%, transparent);
+  }
+
+  /* ---------- right: transcript card ---------- */
+  .card {
+    position: absolute; right: 64px; top: 150px; width: 600px;
+    background: var(--card); border-radius: 20px; box-shadow: var(--card-shadow);
+    padding: 22px 26px 22px;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 16px;
+  }
+  .file { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+  .file small { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .status {
+    font-size: 12px; font-weight: 700; color: var(--s2); letter-spacing: .5px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: color-mix(in srgb, var(--s2) 14%, transparent);
+  }
+  .status i { width: 7px; height: 7px; border-radius: 50%; background: var(--s2); display: block; }
+  .para { display: grid; grid-template-columns: 82px 1fr; gap: 0 12px; margin-bottom: 15px; }
+  .para:last-of-type { margin-bottom: 0; }
+  .t { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: var(--time); padding-top: 3px; }
+  .who { font-size: 13px; font-weight: 800; margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .who i { width: 8px; height: 8px; border-radius: 50%; display: block; }
+  .txt { font-size: 16px; line-height: 1.6; color: var(--ink); }
+  .s1 .who { color: var(--s1); } .s1 .who i { background: var(--s1); }
+  .s2 .who { color: var(--s2); } .s2 .who i { background: var(--s2); }
+  .s3 .who { color: var(--s3); } .s3 .who i { background: var(--s3); }
+  .hl {
+    background: color-mix(in srgb, var(--s2) 18%, transparent);
+    border-radius: 4px; padding: 0 2px; position: relative;
+  }
+  .ticks {
+    grid-column: 2; margin-top: 6px; display: flex; gap: 6px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--muted);
+  }
+  .tick {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 4px 6px; border-radius: 6px; background: var(--chip); border: 1px solid var(--line);
+  }
+  .tick b { font-family: "PingFang SC", system-ui, sans-serif; font-size: 13px; color: var(--ink); font-weight: 700; }
+  .exports {
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  }
+  .fmt {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-weight: 700; font-size: 12px;
+    padding: 3px 8px; border-radius: 6px; color: var(--ink); background: var(--chip); border: 1px solid var(--line);
+  }
+
+  /* ---------- footer ---------- */
+  footer {
+    position: absolute; left: 72px; bottom: 44px;
+    display: flex; gap: 22px; font-size: 15px; font-weight: 600; color: var(--muted);
+  }
+  footer span { display: inline-flex; align-items: center; gap: 8px; }
+  footer span::before {
+    content: ""; width: 6px; height: 6px; border-radius: 2px; background: var(--honey); transform: rotate(45deg);
+  }
+</style>
+</head>
+<body>
+<svg class="hex-bg" viewBox="0 0 1280 640" aria-hidden="true">
+  <defs>
+    <pattern id="hex" width="56" height="97" patternUnits="userSpaceOnUse" patternTransform="translate(980 -20)">
+      <path d="M28 0 L56 16.2 L56 48.5 L28 64.7 L0 48.5 L0 16.2 Z M28 64.7 L28 97" fill="none" stroke="var(--line)" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="fade" x1="0" x2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <mask id="m"><rect width="1280" height="640" fill="url(#fade)"/></mask>
+  </defs>
+  <rect width="1280" height="640" fill="url(#hex)" mask="url(#m)"/>
+</svg>
+
+<header>
+  <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+    <path d="M32 3 L57 17.5 L57 46.5 L32 61 L7 46.5 L7 17.5 Z" fill="var(--honey)"/>
+    <g stroke="#fff" stroke-width="4" stroke-linecap="round">
+      <line x1="19" y1="28" x2="19" y2="36"/>
+      <line x1="26" y1="22" x2="26" y2="42"/>
+      <line x1="33" y1="17" x2="33" y2="47"/>
+      <line x1="40" y1="24" x2="40" y2="40"/>
+      <line x1="47" y1="29" x2="47" y2="35"/>
+    </g>
+  </svg>
+  <div class="brand">
+    <h1>Bee<span>Box</span></h1>
+    <p>把声音变成可靠的文字<em>Speech in. Trustworthy text out.</em></p>
+  </div>
+</header>
+
+<section class="sources">
+  <div class="label">Input</div>
+  <svg class="wave" id="wave" viewBox="0 0 360 120" aria-hidden="true"></svg>
+  <div class="chips">
+    <span class="chip">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>
+      会议录音<span class="ext">.m4a</span>
+    </span>
+    <span class="chip">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="3" width="13" height="10" rx="2"/><path d="M6.5 6v4l3.5-2z" fill="currentColor"/></svg>
+      讲座视频<span class="ext">.mp4</span>
+    </span>
+    <span class="chip">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 0 1 4 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 0 1-4-4L5 7.5"/></svg>
+      Bilibili 链接
+    </span>
+    <span class="chip">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.8 2.8 0 0 1 4 4L11 8.5M9 11.5l-1.2 1.2a2.8 2.8 0 0 1-4-4L5 7.5"/></svg>
+      YouTube 链接
+    </span>
+  </div>
+</section>
+
+<section class="engine">
+  <div class="label">Pipeline</div>
+  <div class="steps">
+    <div class="step">识别</div>
+    <div class="step">字符级对齐</div>
+    <div class="step">说话人分离</div>
+    <div class="step">分段 · 段落</div>
+  </div>
+  <svg class="out" viewBox="0 0 22 40" aria-hidden="true">
+    <path d="M5 6 L17 20 L5 34" fill="none" stroke="var(--honey)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div class="file">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 1.5h5.5L13 5v9.5H4z"/><path d="M9.5 1.5V5H13M6 8.5h5M6 11h3.5"/></svg>
+      产品周会.m4a <small>82:41 · 3 位说话人</small>
+    </div>
+    <span class="status"><i></i>SUCCEEDED</span>
+  </div>
+
+  <div class="para s1">
+    <div class="t">00:00:12</div>
+    <div>
+      <div class="who"><i></i>说话人 1</div>
+      <div class="txt">先过一下上线方案。重点是服务重启以后，排队中的任务要按原来的顺序恢复。</div>
+    </div>
+  </div>
+
+  <div class="para s2">
+    <div class="t">00:00:31</div>
+    <div>
+      <div class="who"><i></i>说话人 2</div>
+      <div class="txt">我补充一点：部署前先<span class="hl">暂停队列</span>，等当前任务跑完再切版本。</div>
+    </div>
+    <div class="ticks">
+      <span class="tick"><b>暂</b>33.42</span>
+      <span class="tick"><b>停</b>33.61</span>
+      <span class="tick"><b>队</b>33.80</span>
+      <span class="tick"><b>列</b>33.97</span>
+    </div>
+  </div>
+
+  <div class="para s3">
+    <div class="t">00:00:48</div>
+    <div>
+      <div class="who"><i></i>说话人 3</div>
+      <div class="txt">好，那 Markdown 和 SRT 都导出来，直接放进知识库。</div>
+    </div>
+  </div>
+
+  <div class="exports">
+    导出 <span class="fmt">TXT</span><span class="fmt">MD</span><span class="fmt">SRT</span>
+    <span style="margin-left:auto">GET /v1/jobs/{id}/result</span>
+  </div>
+</section>
+
+<footer>
+  <span>Qwen3-ASR</span>
+  <span>本地运行 · 数据不出门</span>
+  <span>统一 /v1 接口</span>
+  <span>20+ 本地模型</span>
+</footer>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  if (params.get("theme") === "dark") document.documentElement.dataset.theme = "dark";
+
+  // Deterministic waveform: speech-like bursts separated by short pauses.
+  const svg = document.getElementById("wave");
+  const n = 54, w = 360, h = 120, gap = w / n, barW = gap * 0.58;
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < n; i++) {
+    const burst = Math.abs(Math.sin(i / 5.2)) * 0.75 + Math.abs(Math.sin(i / 1.7)) * 0.25;
+    const pause = (i % 18 > 15) ? 0.12 : 1;
+    const amp = Math.max(0.08, burst * pause * (0.55 + rand() * 0.45));
+    const bh = amp * (h - 8);
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", (i * gap).toFixed(2));
+    r.setAttribute("y", ((h - bh) / 2).toFixed(2));
+    r.setAttribute("width", barW.toFixed(2));
+    r.setAttribute("height", bh.toFixed(2));
+    r.setAttribute("rx", (barW / 2).toFixed(2));
+    r.setAttribute("fill", "var(--wave)");
+    r.setAttribute("opacity", (0.35 + amp * 0.65).toFixed(2));
+    svg.appendChild(r);
+  }
+</script>
+</body>
+</html>
