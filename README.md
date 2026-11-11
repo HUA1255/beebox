@@ -25,6 +25,8 @@
 6. [快速上手](#6-快速上手)
 7. [配置、接口与开发](#7-配置接口与开发)
 
+> 开发过程中问题是怎么发现、判断和修复的，见[修复与决策历史](docs/history.md)。代码和文档里的 `#编号` 指私有开发仓库的 issue，对照表也在那份文档里。
+
 ---
 
 ## 1. 它是什么、不是什么
@@ -367,6 +369,7 @@ cd console; npm ci; npm run build       # 改了控制台源码后重新构建�
 
 ### 延伸阅读
 
+- [docs/history.md](docs/history.md)：修复与决策历史（工作方式、典型修错案例、issue 编号对照）
 - [AGENTS.md](AGENTS.md)：开发规范与流程（唯一入口）
 - [GLOSSARY.md](GLOSSARY.md)：领域术语
 - [docs/adr/](docs/adr/)：架构决策记录（当前有效：0007–0013）

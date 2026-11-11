@@ -25,6 +25,8 @@ It exposes its capabilities only through the `/v1` HTTP API; models and data sta
 6. [Getting started](#6-getting-started)
 7. [Configuration, API, and development](#7-configuration-api-and-development)
 
+> How problems were found, judged, and fixed during development is written up in the [fix and decision history](docs/history.md) (in Chinese). `#numbers` in the code and docs refer to issues in the private development repository; the mapping is in that document.
+
 ---
 
 ## 1. What it is and what it is not
@@ -370,6 +372,7 @@ Real-model tests require your own lawfully obtained media and pre-downloaded mod
 
 ### Further reading
 
+- [docs/history.md](docs/history.md): fix and decision history, in Chinese (workflow, representative fixes, issue-number mapping)
 - [AGENTS.md](AGENTS.md): development conventions and workflow (the single entry point)
 - [GLOSSARY.md](GLOSSARY.md): domain terms
 - [docs/adr/](docs/adr/): architecture decision records (currently active: 0007–0013)
