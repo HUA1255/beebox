@@ -304,48 +304,9 @@ BeeBox 起步于开源项目 [asrbox](https://github.com/Goldloli/asrbox)，在�
 
 ### 分层总览
 
-```mermaid
-flowchart TB
-    subgraph Clients[调用方]
-        app[你的应用 / 服务]
-        script[脚本 / AI Agent]
-        console[控制台 /console]
-    end
-
-    subgraph API["/v1 接口层（backend/v1）"]
-        files["/v1/files"]
-        jobs["/v1/jobs"]
-        models["/v1/models"]
-        queue["/v1/queue · /v1/health"]
-    end
-
-    subgraph Services[服务层（backend/services）]
-        tasks[任务生命周期 tasks]
-        video[视频链接 video_jobs]
-        gpuq[GPU 队列 gpu_queue<br/>FIFO · 并发 1]
-        pipeline[媒体 → 分块 → 合并 → 后处理<br/>→ 分段 → 段落 → 导出]
-        mgr[模型管理 models]
-        ret[保留期清理 retention]
-    end
-
-    subgraph Engine[SpeechEngine 边界]
-        local[local：真实模型]
-        fake[fake：测试替身]
-    end
-
-    worker[推理子进程<br/>local_task_worker<br/>心跳 + 卸载]
-    backends[ASR 后端 · 对齐器 · pyannote<br/>backend/backends]
-    store[(SQLite + 数据目录<br/>上传 / 派生音频 / 导出)]
-
-    Clients -->|HTTP + Bearer token| API
-    API --> Services
-    tasks --> gpuq --> pipeline
-    video -->|有平台字幕：不占 GPU| pipeline
-    video -->|无字幕：只下音轨| gpuq
-    pipeline --> Engine
-    local --> worker --> backends
-    Services --> store
-```
+<p align="center">
+  <img src="docs/assets/architecture.png" alt="BeeBox 整体架构：调用方经 HTTP + Bearer token 访问 /v1 接口层；服务层负责任务生命周期、GPU 队列、视频链接、转写流水线、模型管理、保留期清理和 B 站登录；流水线只通过 SpeechEngine 边界（local 真实模型 / fake 测试替身）调用独立的推理子进程；右侧列出本地存储、可靠性、安全和运行形态" width="100%">
+</p>
 
 ### 一条转写任务怎么走
 

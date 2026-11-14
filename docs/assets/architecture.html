@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>整体架构</title>
+<style>
+/* 文章配图的共用样式，配色沿用 BeeBox README 首图。 */
+:root {
+  --bg: #fbf8f2;
+  --glow: rgba(245, 166, 35, 0.14);
+  --ink: #1c1a17;
+  --muted: #6b655c;
+  --faint: #9a9184;
+  --line: #e7e0d4;
+  --card: #ffffff;
+  --shadow: 0 14px 36px rgba(60, 40, 10, 0.10), 0 1px 4px rgba(60, 40, 10, 0.06);
+  --chip: #f3ede3;
+  --honey: #e8930c;
+  --honey-soft: #fff1d9;
+  --teal: #0f9d8a;
+  --teal-soft: #e2f5f1;
+  --violet: #7c5cdb;
+  --violet-soft: #efeafc;
+  --red: #c8553d;
+  --red-soft: #fbe9e4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1280px; }
+html { background: var(--bg); }
+body { min-height: 100vh; }
+body {
+  background:
+    radial-gradient(800px 420px at 95% -10%, var(--glow), transparent 60%),
+    radial-gradient(700px 400px at -5% 110%, var(--glow), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 48px 64px 52px;
+}
+.title { display: flex; align-items: baseline; gap: 14px; margin-bottom: 30px; }
+.title h1 { font-size: 30px; font-weight: 800; letter-spacing: -.3px; }
+.title h1 span { color: var(--honey); }
+.title p { font-size: 16px; color: var(--muted); font-weight: 500; }
+.label {
+  font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--muted);
+  text-transform: uppercase;
+}
+.card {
+  background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px; border-radius: 16px;
+  background: var(--chip); border: 1px solid var(--line);
+  font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap;
+}
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+.honey { color: var(--honey); }
+.teal { color: var(--teal); }
+.violet { color: var(--violet); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.foot { margin-top: 26px; font-size: 13px; color: var(--faint); display: flex; gap: 22px; }
+.foot b { color: var(--muted); font-weight: 600; }
+
+</style>
+<style>
+  .wrap { display: grid; grid-template-columns: 1fr 230px; gap: 22px; }
+  .stack { display: flex; flex-direction: column; gap: 0; }
+  .layer { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 18px; padding: 18px 22px; }
+  .layer .name h3 { font-size: 17px; font-weight: 800; }
+  .layer .name p { margin-top: 4px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .arrow { height: 30px; display: flex; align-items: center; padding-left: 96px; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .arrow svg { width: 14px; height: 30px; }
+  .clients { background: transparent; border: 1.5px dashed var(--line); box-shadow: none; }
+  .api .pill { background: var(--honey-soft); border-color: color-mix(in srgb, var(--honey) 30%, transparent); color: #a5650a; }
+  .api .pill.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13.5px; }
+  .svc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .box { border-radius: 12px; background: var(--chip); border: 1px solid var(--line); padding: 11px 13px; }
+  .box h4 { font-size: 14px; font-weight: 800; }
+  .box p { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+  .box.wide { grid-column: span 3; }
+  .flow { display: flex; align-items: center; gap: 4px; margin-top: 7px; flex-wrap: nowrap; }
+  .flow span { font-size: 12px; font-weight: 700; padding: 3px 6px; white-space: nowrap; border-radius: 7px; background: #fff; border: 1px solid var(--line); }
+  .flow em { font-style: normal; color: var(--honey); font-weight: 800; }
+  .engine { border: 2px solid var(--honey); }
+  .engine .halves { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .half { border-radius: 12px; padding: 11px 13px; }
+  .half.local { background: var(--honey-soft); }
+  .half.fake { background: var(--teal-soft); }
+  .half h4 { font-size: 14px; font-weight: 800; }
+  .half.local h4 { color: #a5650a; } .half.fake h4 { color: var(--teal); }
+  .half p { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+  .worker .pill { background: #fff; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .side .card { padding: 18px 18px; }
+  .side h3 { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .side ul { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+  .side li { font-size: 13px; color: var(--muted); line-height: 1.45; padding-left: 14px; position: relative; }
+  .side li::before { content: ""; position: absolute; left: 0; top: 7px; width: 6px; height: 6px; border-radius: 2px; background: var(--honey); }
+  .db { width: 22px; height: 22px; }
+</style>
+</head>
+<body>
+  <div class="title"><h1>Bee<span>Box</span> 整体架构</h1><p>流水线只认 SpeechEngine 边界，模型都跑在独立子进程里</p></div>
+
+  <div class="wrap">
+    <div class="stack">
+      <div class="card layer clients">
+        <div class="name"><h3>调用方</h3><p>控制台也只用公开接口</p></div>
+        <div class="row"><span class="pill">你的应用 / 服务</span><span class="pill">脚本</span><span class="pill">AI Agent</span><span class="pill">Beer 家里服务</span><span class="pill">控制台 /console</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg>HTTP + Bearer token</div>
+
+      <div class="card layer api">
+        <div class="name"><h3>/v1 接口层</h3><p>契约 = 提交进仓库的<br>openapi.json 快照</p></div>
+        <div class="row"><span class="pill mono">/v1/files</span><span class="pill mono">/v1/jobs</span><span class="pill mono">/v1/models</span><span class="pill mono">/v1/queue</span><span class="pill mono">/v1/health</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg></div>
+
+      <div class="card layer">
+        <div class="name"><h3>服务层</h3><p>真正复杂的逻辑<br>都在这里</p></div>
+        <div class="svc-grid">
+          <div class="box"><h4>任务生命周期</h4><p>对外只有 5 个状态</p></div>
+          <div class="box"><h4>GPU 队列</h4><p>先进先出，并发 1，可暂停</p></div>
+          <div class="box"><h4>视频链接</h4><p>有字幕直接转换，不占 GPU</p></div>
+          <div class="box wide"><h4>转写流水线</h4>
+            <div class="flow"><span>预处理</span><em>→</em><span>120 s 分块</span><em>→</em><span>识别 + 对齐</span><em>→</em><span>跨块合并</span><em>→</em><span>说话人分离</span><em>→</em><span>分段</span><em>→</em><span>段落</span><em>→</em><span>导出</span></div>
+          </div>
+          <div class="box"><h4>模型管理</h4><p>下载、加载、卸载</p></div>
+          <div class="box"><h4>保留期清理</h4><p>源媒体用完即删，结果留 30 天</p></div>
+          <div class="box"><h4>B 站登录</h4><p>扫码、每日失效检测</p></div>
+        </div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg>SpeechRequest → TranscriptionResult</div>
+
+      <div class="card layer engine">
+        <div class="name"><h3>SpeechEngine</h3><p>流水线与模型之间<br>唯一的边界</p></div>
+        <div class="halves">
+          <div class="half local"><h4>local · 真实模型</h4><p>生产环境，走下面的推理子进程</p></div>
+          <div class="half fake"><h4>fake · 测试替身</h4><p>CI 不需要 GPU、模型和网络</p></div>
+        </div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg></div>
+
+      <div class="card layer worker">
+        <div class="name"><h3>推理子进程</h3><p>CPU 时间做心跳<br>任务结束即退出</p></div>
+        <div class="row"><span class="pill">Qwen3-ASR 等 20+ 模型</span><span class="pill">ForcedAligner</span><span class="pill">pyannote</span></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3><svg class="db" viewBox="0 0 24 24" fill="none" stroke="#e8930c" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>本地存储</h3>
+        <ul><li>SQLite：任务与分块进度</li><li>数据目录：上传、音频、导出</li><li>备份就是复制目录</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--teal)"></span>可靠性</h3>
+        <ul><li>分块落库，断点续跑</li><li>排队任务按原顺序恢复</li><li>心跳停滞才判定卡死</li><li>部署前先暂停队列</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--violet)"></span>安全</h3>
+        <ul><li>监听局域网必须配置 token</li><li>平台凭证只写不读</li><li>全部本地推理</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--honey)"></span>运行形态</h3>
+        <ul><li>Windows 11 原生服务（WinSW）</li><li>uv 锁定依赖，按 git tag 部署</li><li>单端口，控制台挂在 /console</li></ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
