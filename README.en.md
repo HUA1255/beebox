@@ -304,48 +304,9 @@ See [ADR-0011](docs/adr/0011-lan-token-and-retention.md) and [Privacy and local 
 
 ### Layered overview
 
-```mermaid
-flowchart TB
-    subgraph Clients[Clients]
-        app[Your app / service]
-        script[Scripts / AI agents]
-        console[Console /console]
-    end
-
-    subgraph API["/v1 API layer (backend/v1)"]
-        files["/v1/files"]
-        jobs["/v1/jobs"]
-        models["/v1/models"]
-        queue["/v1/queue · /v1/health"]
-    end
-
-    subgraph Services[Service layer (backend/services)]
-        tasks[Job lifecycle tasks]
-        video[Video links video_jobs]
-        gpuq[GPU queue gpu_queue<br/>FIFO · concurrency 1]
-        pipeline[Media → chunks → merge → post-processing<br/>→ segments → paragraphs → export]
-        mgr[Model management models]
-        ret[Retention cleanup retention]
-    end
-
-    subgraph Engine[SpeechEngine boundary]
-        local[local: real models]
-        fake[fake: test double]
-    end
-
-    worker[Inference subprocess<br/>local_task_worker<br/>heartbeat + unload]
-    backends[ASR backends · aligner · pyannote<br/>backend/backends]
-    store[(SQLite + data directory<br/>uploads / derived audio / exports)]
-
-    Clients -->|HTTP + Bearer token| API
-    API --> Services
-    tasks --> gpuq --> pipeline
-    video -->|platform subtitles: no GPU| pipeline
-    video -->|no subtitles: audio track only| gpuq
-    pipeline --> Engine
-    local --> worker --> backends
-    Services --> store
-```
+<p align="center">
+  <img src="docs/assets/architecture.en.png" alt="BeeBox architecture: clients call the /v1 API over HTTP with a Bearer token; the service layer handles the job lifecycle, GPU queue, video links, transcription pipeline, model management, retention cleanup and Bilibili sign-in; the pipeline reaches models only through the SpeechEngine boundary (local real models / fake test double), which runs a separate inference worker; side cards cover local storage, reliability, security and deployment" width="100%">
+</p>
 
 ### How a transcription job flows
 

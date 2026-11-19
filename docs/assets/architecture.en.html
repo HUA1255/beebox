@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Architecture</title>
+<!--
+  English README 架构图的源文件。1280×1000。
+  重新生成 PNG（在仓库根目录执行）：
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --hide-scrollbars \
+      --force-device-scale-factor=2 --window-size=1280,1000 \
+      --screenshot=docs/assets/architecture.en.png "file://$PWD/docs/assets/architecture.en.html"
+-->
+<style>
+/* 文章配图的共用样式，配色沿用 BeeBox README 首图。 */
+:root {
+  --bg: #fbf8f2;
+  --glow: rgba(245, 166, 35, 0.14);
+  --ink: #1c1a17;
+  --muted: #6b655c;
+  --faint: #9a9184;
+  --line: #e7e0d4;
+  --card: #ffffff;
+  --shadow: 0 14px 36px rgba(60, 40, 10, 0.10), 0 1px 4px rgba(60, 40, 10, 0.06);
+  --chip: #f3ede3;
+  --honey: #e8930c;
+  --honey-soft: #fff1d9;
+  --teal: #0f9d8a;
+  --teal-soft: #e2f5f1;
+  --violet: #7c5cdb;
+  --violet-soft: #efeafc;
+  --red: #c8553d;
+  --red-soft: #fbe9e4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1280px; }
+html { background: var(--bg); }
+body { min-height: 100vh; }
+body {
+  background:
+    radial-gradient(800px 420px at 95% -10%, var(--glow), transparent 60%),
+    radial-gradient(700px 400px at -5% 110%, var(--glow), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, "SF Pro Text", "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 48px 64px 52px;
+}
+.title { display: flex; align-items: baseline; gap: 14px; margin-bottom: 30px; }
+.title h1 { font-size: 30px; font-weight: 800; letter-spacing: -.3px; }
+.title h1 span { color: var(--honey); }
+.title p { font-size: 16px; color: var(--muted); font-weight: 500; }
+.label {
+  font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--muted);
+  text-transform: uppercase;
+}
+.card {
+  background: var(--card); border-radius: 16px; box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 14px; border-radius: 16px;
+  background: var(--chip); border: 1px solid var(--line);
+  font-size: 14px; font-weight: 600; color: var(--ink); white-space: nowrap;
+}
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+.honey { color: var(--honey); }
+.teal { color: var(--teal); }
+.violet { color: var(--violet); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.foot { margin-top: 26px; font-size: 13px; color: var(--faint); display: flex; gap: 22px; }
+.foot b { color: var(--muted); font-weight: 600; }
+
+</style>
+<style>
+  .wrap { display: grid; grid-template-columns: 1fr 230px; gap: 22px; }
+  .stack { display: flex; flex-direction: column; gap: 0; }
+  .layer { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 18px; padding: 18px 22px; }
+  .layer .name h3 { font-size: 17px; font-weight: 800; }
+  .layer .name p { margin-top: 4px; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .arrow { height: 30px; display: flex; align-items: center; padding-left: 96px; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .arrow svg { width: 14px; height: 30px; }
+  .clients { background: transparent; border: 1.5px dashed var(--line); box-shadow: none; }
+  .api .pill { background: var(--honey-soft); border-color: color-mix(in srgb, var(--honey) 30%, transparent); color: #a5650a; }
+  .api .pill.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13.5px; }
+  .svc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .box { border-radius: 12px; background: var(--chip); border: 1px solid var(--line); padding: 11px 13px; }
+  .box h4 { font-size: 14px; font-weight: 800; }
+  .box p { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+  .box.wide { grid-column: span 3; }
+  .flow { display: flex; align-items: center; gap: 4px; margin-top: 7px; flex-wrap: nowrap; }
+  .flow span { font-size: 12px; font-weight: 700; padding: 3px 6px; white-space: nowrap; border-radius: 7px; background: #fff; border: 1px solid var(--line); }
+  .flow em { font-style: normal; color: var(--honey); font-weight: 800; }
+  .engine { border: 2px solid var(--honey); }
+  .engine .halves { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .half { border-radius: 12px; padding: 11px 13px; }
+  .half.local { background: var(--honey-soft); }
+  .half.fake { background: var(--teal-soft); }
+  .half h4 { font-size: 14px; font-weight: 800; }
+  .half.local h4 { color: #a5650a; } .half.fake h4 { color: var(--teal); }
+  .half p { font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.45; }
+  .worker .pill { background: #fff; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .side .card { padding: 18px 18px; }
+  .side h3 { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+  .side ul { list-style: none; margin-top: 10px; display: flex; flex-direction: column; gap: 7px; }
+  .side li { font-size: 13px; color: var(--muted); line-height: 1.45; padding-left: 14px; position: relative; }
+  .side li::before { content: ""; position: absolute; left: 0; top: 7px; width: 6px; height: 6px; border-radius: 2px; background: var(--honey); }
+  .db { width: 22px; height: 22px; }
+  .flow { gap: 3px; } .flow span { font-size: 11.5px; padding: 3px 5px; }
+</style>
+</head>
+<body>
+  <div class="title"><h1>Bee<span>Box</span> Architecture</h1><p>The pipeline only knows the SpeechEngine boundary; models run in a separate subprocess</p></div>
+
+  <div class="wrap">
+    <div class="stack">
+      <div class="card layer clients">
+        <div class="name"><h3>Clients</h3><p>The console uses the same public API</p></div>
+        <div class="row"><span class="pill">Your app / service</span><span class="pill">Scripts</span><span class="pill">AI Agent</span><span class="pill">Beer home service</span><span class="pill">Console /console</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg>HTTP + Bearer token</div>
+
+      <div class="card layer api">
+        <div class="name"><h3>/v1 API</h3><p>Contract = the committed<br>openapi.json snapshot</p></div>
+        <div class="row"><span class="pill mono">/v1/files</span><span class="pill mono">/v1/jobs</span><span class="pill mono">/v1/models</span><span class="pill mono">/v1/queue</span><span class="pill mono">/v1/health</span></div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg></div>
+
+      <div class="card layer">
+        <div class="name"><h3>Services</h3><p>Where the real<br>complexity lives</p></div>
+        <div class="svc-grid">
+          <div class="box"><h4>Job lifecycle</h4><p>Only 5 public states</p></div>
+          <div class="box"><h4>GPU queue</h4><p>FIFO, concurrency 1, pausable</p></div>
+          <div class="box"><h4>Video links</h4><p>Subtitles convert directly, no GPU</p></div>
+          <div class="box wide"><h4>Transcription pipeline</h4>
+            <div class="flow"><span>Prep</span><em>→</em><span>120 s chunks</span><em>→</em><span>ASR + align</span><em>→</em><span>Merge</span><em>→</em><span>Diarize</span><em>→</em><span>Segment</span><em>→</em><span>Paragraph</span><em>→</em><span>Export</span></div>
+          </div>
+          <div class="box"><h4>Model management</h4><p>Download, load, unload</p></div>
+          <div class="box"><h4>Retention cleanup</h4><p>Source media deleted after use; results kept 30 days</p></div>
+          <div class="box"><h4>Bilibili sign-in</h4><p>QR code login, daily expiry check</p></div>
+        </div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg>SpeechRequest → TranscriptionResult</div>
+
+      <div class="card layer engine">
+        <div class="name"><h3>SpeechEngine</h3><p>Sole boundary between<br>pipeline and models</p></div>
+        <div class="halves">
+          <div class="half local"><h4>local · real models</h4><p>Production; runs the inference subprocess below</p></div>
+          <div class="half fake"><h4>fake · test double</h4><p>CI needs no GPU, models or network</p></div>
+        </div>
+      </div>
+      <div class="arrow"><svg viewBox="0 0 14 30"><path d="M7 0V26M1 20l6 7 6-7" stroke="#e8930c" stroke-width="2" fill="none"/></svg></div>
+
+      <div class="card layer worker">
+        <div class="name"><h3>Inference worker</h3><p>CPU-time heartbeat;<br>exits when the job ends</p></div>
+        <div class="row"><span class="pill">Qwen3-ASR and 20+ models</span><span class="pill">ForcedAligner</span><span class="pill">pyannote</span></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3><svg class="db" viewBox="0 0 24 24" fill="none" stroke="#e8930c" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Local storage</h3>
+        <ul><li>SQLite: jobs, chunk progress</li><li>Files: uploads, audio, exports</li><li>Backup = copy the directory</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--teal)"></span>Reliability</h3>
+        <ul><li>Chunks persisted; resume after crash</li><li>Queued jobs restored in order</li><li>Stuck only when heartbeat stalls</li><li>Pause the queue before deploys</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--violet)"></span>Security</h3>
+        <ul><li>LAN binding requires a token</li><li>Platform credentials are write-only</li><li>All inference stays local</li></ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--honey)"></span>Deployment</h3>
+        <ul><li>Native Windows 11 service (WinSW)</li><li>uv-locked deps, deploy by git tag</li><li>One port; console at /console</li></ul>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
