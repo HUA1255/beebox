@@ -4,6 +4,10 @@ All notable BeeBox changes are documented here. The format follows Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- 上线后验收工具 `deploy/windows/verify-url-job.ps1`：从受 ACL 保护的生产 `settings.env` 读取 Bearer token，提交一条真实视频链接任务并轮询到终态，只输出 job 状态、`error_code`、`text_source` 与段落/字符/分段计数；token、转写稿内容和提交的 URL 都不回显，`succeeded` 退出码 0，其余为 1。新增 `test-verify-url-job.ps1`，用回环假 `/v1` 服务器检查提交、轮询、汇总和退出码，不提交真实任务（refs #12）。
+
 ### Fixed
 
 - 部署与安装脚本不再把原生命令写到 stderr 的进度行当成终止错误（`git fetch` 的 “From …”、`uv sync` 的 “Checked …”），修复 `deploy.ps1` 部署 1.0.1 时中断并停服的问题；普通终端 `-DryRun` 也不再被受 ACL 保护的生产 settings 探查中断（refs #91）。
