@@ -133,6 +133,82 @@ ssh <user>@<beebox-host> \
 - OpenSSH 的默认 shell 可以是 `cmd.exe` 或 PowerShell；上面的写法显式调用 `powershell -File`，不依赖默认 shell。
 - Tailscale 的地址用 `tailscale ip -4` 查；在同一 tailnet 内也可以直接用 MagicDNS 主机名。
 
+## 从 agent / 远程会话部署线上实例
+
+从 agent、自动化会话或远程 shell 操作这台机器时，下面四条约束不在安装步骤里，但会直接决定部署能否完成。在普通终端手工部署不需要阅读本节。
+
+### 出站代理
+
+部署过程中有三个进程会访问外网：`git fetch`（准备 tag）、`uv sync --frozen`（同步依赖）和 `gh`（`-IssueNumber` 回写）。代理必须设置在真正执行 `deploy.ps1` 的提权会话里；只在调用方 shell 里设置，提权进程不一定看得到。在包装脚本或提权终端里先执行：
+
+```powershell
+$proxy = 'http://127.0.0.1:<proxy-port>'
+$env:HTTPS_PROXY = $proxy
+$env:HTTP_PROXY = $proxy
+$env:NO_PROXY = '127.0.0.1,localhost'
+# 让 git 也走代理（仅本进程有效，Git 2.31+）
+$env:GIT_CONFIG_COUNT = '1'
+$env:GIT_CONFIG_KEY_0 = 'http.proxy'
+$env:GIT_CONFIG_VALUE_0 = $proxy
+```
+
+- `HTTPS_PROXY` / `HTTP_PROXY` 供 `uv`、`gh` 与 git 的 https 远端使用；`NO_PROXY` 把 `127.0.0.1` 排除在代理外——健康检查和队列请求只走本机回环，不该经过出站代理。
+- git 不走代理时，`git fetch` 可能被远端 reset，部署会停在“准备 tag”阶段。除上面的进程级变量外，也可以 `git config --global http.proxy <proxy>` 写进当前用户的全局 git 配置（`--system` 才是整台机器）；按需使用。
+- `-IssueNumber` 还要求提权会话里的 `gh` 已登录并能出网。登录状态不属于本仓库，不要在脚本里写 token。
+
+### UAC 必须由人批准
+
+`Start-Process -Verb RunAs` 会在安全桌面弹出 UAC；没有人点“是”（或点了“否”）时，命令在改动任何东西之前就失败。不要在无人值守的循环里反复触发 UAC。
+
+可靠做法是把提权步骤放进一个包装脚本（见下），由维护者在管理员终端运行，或在 UAC 上批准一次。如果通过 SSH 以管理员组用户登录，OpenSSH 直接给完整令牌，不需要 UAC（见上一节）。
+
+`deploy.ps1` 在非提权会话会直接拒绝，拒绝发生在暂停队列和改文件之前。
+
+### 服务包装器在受 ACL 保护的目录
+
+`<root>\secrets` 只对 `SYSTEM` 与 `Administrators` 开放，非提权进程连 `secrets\winsw\BeeBoxService.exe` 和 `BeeBoxService.xml` 都读不到，直接调用会 `Access denied`：
+
+- 启停服务由维护者在提权 PowerShell 里执行 `Start-Service BeeBox` / `Stop-Service BeeBox`（`Restart-Service` 同理），不要从非提权 shell 调用 WinSW 可执行文件。
+- `Get-Service BeeBox` 非提权也能读，可以用来确认状态。
+- 日常部署仍然统一走 `deploy.ps1 -Tag <tag>`：它要求提权，并在内部调用 WinSW。
+
+### 提权包装脚本与日志
+
+包装脚本骨架（保存为 **UTF-8 with BOM**）：
+
+```powershell
+# deploy-online.ps1 — 在提权 PowerShell 里运行
+param([Parameter(Mandatory = $true)][string]$Tag)
+
+$ErrorActionPreference = 'Stop'
+$logPath = 'C:\BeeBox\logs\deploy-manual.log'
+$proxy = 'http://127.0.0.1:<proxy-port>'
+$env:HTTPS_PROXY = $proxy
+$env:HTTP_PROXY = $proxy
+$env:NO_PROXY = '127.0.0.1,localhost'
+$env:GIT_CONFIG_COUNT = '1'
+$env:GIT_CONFIG_KEY_0 = 'http.proxy'
+$env:GIT_CONFIG_VALUE_0 = $proxy
+
+try {
+    & 'C:\Admin\beebox\deploy\windows\deploy.ps1' -Tag $Tag *>&1 |
+        Tee-Object -FilePath $logPath -Append
+}
+catch {
+    $_ | Out-File -FilePath $logPath -Append -Encoding Unicode
+    exit 1
+}
+```
+
+要点：
+
+- **日志落盘**：Windows PowerShell 5.1 的 `Tee-Object` 和 `>` 默认写 UTF-16LE；追加日志保持同一编码（`Out-File -Append -Encoding Unicode`），读取时用 `Get-Content -Encoding Unicode`，不要混写 UTF-8。
+- **脚本编码**：checkout 路径含非 ASCII 字符时，包装脚本必须保存为 UTF-8 with BOM。PowerShell 5.1 读取无 BOM 的 `.ps1` 会按 ANSI 解释，路径会被破坏。
+- **失败可见**：保留 `$ErrorActionPreference = 'Stop'` 与 `try/catch`，异常以非 0 退出并写入日志；不要把错误吞成 `Continue`。
+- **凭证**：包装脚本、日志和 issue 回写里都不要出现 token。`deploy.ps1` 从 `settings.env` 读取 token 且不打印；验证时只看 `/v1/health`、`Get-Service` 等状态输出，不要回显 `settings.env` 的内容。
+
+推荐顺序：先用 `deploy.ps1 -Tag <tag> -DryRun` 核对 tag、commit、版本与服务布局（DryRun 不需要提权、不 fetch），再让维护者批准提权包装脚本执行正式部署；失败时先看 `Tee-Object` 落盘的日志，再按“故障排查”处理。
+
 ## install.ps1 参数
 
 | 参数 | 默认值 | 说明 |
@@ -248,7 +324,7 @@ curl.exe -X POST http://127.0.0.1:17494/v1/admin/youtube-cookie `
 
 ## 服务管理
 
-WinSW 可执行文件与配置在 `<root>\secrets\winsw`：
+WinSW 可执行文件与配置在 `<root>\secrets\winsw`。该目录只对 `SYSTEM` 与 `Administrators` 开放，非提权进程解析这些文件会 `Access denied`，所以下面的命令（以及服务的启停）都在**提权 PowerShell** 中执行；只查状态可以用非提权的 `Get-Service BeeBox`。
 
 ```powershell
 $winsw = 'C:\BeeBox\secrets\winsw\BeeBoxService.exe'
@@ -288,22 +364,27 @@ C:\BeeBox\models 只读共用：权重、model.json，不复制、不修改
 ```
 
 - 运行前先在 checkout 里执行 `uv sync --frozen`，脚本使用 `<checkout>\.venv\Scripts\python.exe`；也可以用 `-PythonPath` 指定解释器。
-- 共享模型根默认从 `<ProdRoot>\secrets\settings.env` 的 `BEEBOX_MODEL_STORAGE_ROOT` 读取（生产用 `install.ps1 -ModelRoot` 指定过自定义目录时就是它）；读不到时退回 `<ProdRoot>\models` 并给出警告，此时可用 `-ModelRoot` 显式指定。开发实例的模型缓存写在 `<DevRoot>\model-cache`，不会落到线上模型目录。
+- 共享模型根默认从 `<ProdRoot>\secrets\settings.env` 的 `BEEBOX_MODEL_STORAGE_ROOT` 读取（生产用 `install.ps1 -ModelRoot` 指定过自定义目录时就是它）；读不到时退回 `<ProdRoot>\models` 并给出警告，此时可用 `-ModelRoot` 显式指定。开发实例的模型缓存写在 `<DevRoot>\model-cache`，不会落到线上模型目录。普通终端读不到线上 `settings.env`（ACL 只给 `SYSTEM` 与 `Administrators`），模型根会按上面的规则退回、token 唯一性检查也会告警并跳过；线上用了自定义模型根时，在普通终端显式传 `-ModelRoot <线上模型根>`，不要为了读取设置而提权运行 `Start`。
 - 开发实例的环境会在 `<DevRoot>\secrets\settings.env` 中写入 `BEEBOX_DEV_INSTANCE=1`、`BEEBOX_PROD_ROOT`、独立的 `BEEBOX_DATA_DIR`、`BEEBOX_LOG_DIR`、`BEEBOX_MODEL_CACHE_ROOT` 和随机 token；已有 token 会保留，但脚本会拒绝与线上 token 相同的值。
-- 启动时脚本先检查共享模型目录对当前用户不可写。若可写，先执行一次（需要管理员）：
+- 启动时脚本先检查共享模型目录对当前用户不可写。若可写，先执行一次（需要管理员）。**提权会话里这条命令会以 `still writable after the ACL change` 报错结束，这是已知误报，ACL 已应用；原因与确认方法见下面的 `Start` 一条。**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\dev-instance.ps1 -Action ProtectModels
 ```
 
   该操作先把原始 ACL 备份到 `<DevRoot>\secrets\model-acl-backup.txt`，然后把当前用户在该模型树上的权限改为只读 `RX`；`SYSTEM` 与 `Administrators` 保持全权，线上服务（LocalSystem）不受影响。撤销时用 `-Action UnprotectModels` 从备份恢复。注意：保护之后维护者本人也不能直接改模型目录，预置新模型前先 `UnprotectModels`，完成后重新 `ProtectModels`。不要用 `deny` ACE 代替这个只读 ACL：在 Windows 上拒绝 DELETE/写入会连带阻止读取共享权重，线上推理会失败。
-- 隔离检查（无参数时探测配置文件、token 与写权限；路径不存在时跳过对应探测）：
+- **`Start` 与 `VerifyIsolation` 必须在普通（非提权）终端运行。** 提权会话被只读检查拒绝是预期结果，不是 ACL 没生效：
+  - 普通终端里的进程持有 UAC 过滤令牌，`Administrators` 是 deny-only，当前用户只按自己的只读 `RX` ACE 生效，写探针失败，隔离检查通过。
+  - 提权终端里的进程持有完整令牌，`Administrators` 有全权，同一条写探针必然成功：`Start` 会报 `can write the shared production model directory` 并拒绝启动，`VerifyIsolation` 以非 0 退出。它们检查的是“当前会话能不能写共享模型”，不是“这个账号在理论上有没有权限”，所以不要用改 ACL、删守卫或跳过探针的方式绕过。
+  - `ProtectModels` 在提权会话收尾时也要做同一条写探针，所以即使 ACL 已正确应用，脚本仍会以 `still writable after the ACL change` 报错并返回非 0。这是提权会话的已知误报：备份已保存、只读 ACE 已应用。确认方法：在普通终端用与启动相同的 `-ModelRoot`（默认根可省略）运行 `-Action VerifyIsolation`（或 `-Action Start`）；通过即说明 ACL 生效，普通终端仍报可写才是真的没应用。
+  - `Status`、`Stop` 与 `Start -DryRun` 不做模型写探针，两种终端都可以运行；`VerifyIsolation -DryRun` 只跳过模型探针，仍会探测开发数据目录。
+- 隔离检查（无参数时探测配置文件、token 与写权限；路径不存在时跳过对应探测）。在普通终端运行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\dev-instance.ps1 -Action VerifyIsolation
 ```
 
-  退出码非 0 表示隔离不成立。应用启动时还会做一次显式路径守卫：`BEEBOX_DEV_INSTANCE=1` 时数据、日志、上传、派生音频与模型缓存路径落在 `BEEBOX_PROD_ROOT` 内会直接拒绝启动；开发实例上的模型下载、删除、清理接口返回 `409 MODEL_STORAGE_READ_ONLY`，只允许读模型。
+  退出码非 0 表示隔离不成立（提权会话的非 0 退出见上一条，不代表隔离失败）。应用启动时还会做一次显式路径守卫：`BEEBOX_DEV_INSTANCE=1` 时数据、日志、上传、派生音频与模型缓存路径落在 `BEEBOX_PROD_ROOT` 内会直接拒绝启动；开发实例上的模型下载、删除、清理接口返回 `409 MODEL_STORAGE_READ_ONLY`，只允许读模型。
 - `-DryRun` 只打印计划，不建目录、不写 token、不改 ACL、不启动进程；CI 会执行它并断言没有创建任何文件。
 
 ## 真实模型测试（D3）
