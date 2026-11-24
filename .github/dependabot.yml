@@ -1,12 +1,14 @@
 version: 2
 updates:
-  # 组策略：minor/patch 进每日组 PR 统一合并；major 不进入组，
+  # 每周一检查一次：每天一组的 PR 太频繁，而涉及推理库的升级合并前还要跑真实模型测试。
+  # 组策略：minor/patch 进每周组 PR 统一合并；major 不进入组，
   # 由 dependabot 单独提 PR，按 AGENTS.md 评估（大版本需先开 issue 并独立验证）后再合。
   # Python：根目录 pyproject.toml + uv.lock
   - package-ecosystem: uv
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+      day: monday
     groups:
       python:
         patterns: ["*"]
@@ -23,4 +25,5 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+      day: monday
