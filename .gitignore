@@ -17,6 +17,10 @@ __pycache__/
 .venv/
 venv/
 
+# 本机私有 agent 说明（不提交）
+/AGENTS.local.md
+/CLAUDE.local.md
+
 # 环境变量与密钥
 .env
 .env.local
