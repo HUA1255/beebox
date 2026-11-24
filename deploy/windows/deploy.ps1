@@ -454,7 +454,6 @@ function New-DeploymentComment {
     $values = @(
         "BeeBox deployment via ``deploy.ps1``: $result",
         '',
-        "- Host: ``$env:COMPUTERNAME``",
         "- Tag: ``$TagName``",
         "- Commit: ``$Commit``",
         "- Version: ``$Version``",
