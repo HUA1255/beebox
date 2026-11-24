@@ -317,6 +317,17 @@ jobs:
           }
           Write-Host $text
 
+      - name: Verify verify-url-job.ps1 against a fake loopback /v1 server
+        shell: powershell
+        run: |
+          # The verifier is a maintenance tool that submits real jobs in
+          # production. These checks use a loopback fake /v1 server and never
+          # contact port 17494, a real token or a GPU.
+          & powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/test-verify-url-job.ps1 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "test-verify-url-job.ps1 failed with exit code $LASTEXITCODE."
+          }
+
       - name: Verify deploy.ps1 -DryRun changes nothing and prints the steps in order
         shell: powershell
         run: |

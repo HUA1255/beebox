@@ -105,6 +105,22 @@ DryRun 不需要已安装好的 `<root>`，也不会要求管理员权限（CI �
 .\deploy\windows\deploy.ps1 -Tag v0.4.1 -IssueNumber 54
 ```
 
+### 上线后验收
+
+部署完成后，用一条命令对**线上实例**提交一条真实的视频链接任务，确认本次部署的 URL 解析、音轨下载、平台字幕与 ASR 路径确实可用。token 在受 ACL 保护的 `secrets\settings.env` 里，所以和 `deploy.ps1` 一样要在**提权 PowerShell** 中运行；普通终端会在提交前失败并提示。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\verify-url-job.ps1 `
+  -Url 'https://www.bilibili.com/video/BV...'
+```
+
+需要强制走语音识别、跳过平台字幕时加 `-Prefer asr`；默认在平台字幕可用时使用字幕。其他参数：`-TimeoutMinutes`（等待终态的上限，默认 25）、`-Root`（安装根目录，默认 `C:\BeeBox`）、`-BaseUrl`（API 地址，默认 `http://127.0.0.1:17494`，安装时改过端口就传它）、`-PollSeconds`（轮询间隔，默认 5）。
+
+- 只输出 job 状态、`error_code`、`text_source` 以及段落/字符/分段计数；不打印 token 和转写稿内容，也不回显提交的 URL。
+- `succeeded` 退出码为 0；`failed`、`cancelled`、超时和提交被拒退出码为 1，并保留 `error_code`。
+- 验收任务会留在实例的任务列表里，可在控制台删除；脚本不会删除任务、修改设置或写任何文件。
+- 它会提交真实任务并占用 GPU，属于维护工具，验收本身不在 CI 中运行。CI 只运行 `test-verify-url-job.ps1`：用本机回环的假 `/v1` 服务器检查提交、轮询、汇总和退出码，不提交真实任务。
+
 ## 从 Mac 通过 SSH 远程部署
 
 Windows OpenSSH 只对局域网与 Tailscale 开放。一次性配置（管理员 PowerShell）：
