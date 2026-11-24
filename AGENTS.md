@@ -36,6 +36,21 @@ gh issue edit 31 --add-label "ready-for-human"
 
 只在 `HUA1255/beebox` 建 issue。除非用户明确要求，不要 push、不要关闭 issue。
 
+## 公开仓库与隐私
+
+本仓库是公开的。代码、提交信息、作者邮箱、分支名、tag、issue、PR、评论、审查意见和 CI 日志都对外可见，可能被搜索引擎和镜像站收录；删除不等于撤回。写 issue、PR、评论和提交信息前先自查。
+
+- 不写本机绝对路径（用户目录、盘符、worktree 路径）。用 `<repo>`、`<ModelRoot>`、`<media>` 这类占位符；文档里的默认安装路径 `C:\BeeBox`、`C:\BeeBoxDev` 可以写。
+- 不写计算机名、Windows 用户名、局域网 IP、Tailscale 地址和 SSH 登录信息。
+- 不写真实录音的文件名、转写内容、任务 id 和文件 id。用私人录音或私人媒体跑出的真实测试结果不提交（`backend/real_tests/results/` 里已有的公开素材结果可以保留）；issue 和 PR 只写汇总数字（时长、耗时、字数、显存、通过与否）。
+- 不写 token、cookie、SESSDATA 等凭证的值、哈希或片段，也不写真实邮箱和手机号。
+- 不写私有开发仓库的名称、链接、issue 编号和内部细节；需要提及时说“调用方”或“开发仓库”。
+- 提交作者邮箱使用 GitHub 提供的 noreply 地址，不要用真实邮箱。
+- 不要把任何本机注册为本仓库的 self-hosted runner；外部贡献者的 PR 先审查代码，再在本机运行。
+- 拿不准的内容先问维护者，不要先发。push protection 拦截时不要绕过。
+
+旧 issue 编号：代码和文档里已有的 `#N` 指私有开发仓库的历史编号，公开仓库里点不开；新写的 `#N` 指公开仓库。引用旧编号时写“开发仓库 #64（见 docs/history.md）”，不要只写裸的 `#64`，也不要贴私有仓库链接。已有的旧注释不用改。
+
 ## 开发命令（PowerShell）
 
 在仓库根目录执行：
