@@ -105,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy\windows\dev-instance.ps1 -Acti
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\dev-instance.ps1 -Action Start -DryRun
 ```
 
-- 共享模型目录对当前用户可写时 Start 会拒绝启动；在管理员终端执行一次 `-Action ProtectModels`：原始 ACL 先备份到 `<DevRoot>\secrets\model-acl-backup.txt`，当前用户被授予只读（RX），SYSTEM/Administrators 保持全权，因此线上服务（LocalSystem）不受影响。`-Action UnprotectModels` 从备份恢复。
+- 共享模型目录对当前用户可写时 Start 会拒绝启动；在管理员终端执行一次 `-Action ProtectModels`：原始 ACL 先备份到 `<DevRoot>\secrets\model-acl-backup.txt`，当前用户被授予只读（RX），SYSTEM/Administrators 保持全权，因此线上服务（LocalSystem）不受影响。`-Action UnprotectModels` 从备份恢复。`Start` 与 `VerifyIsolation` 的写探针要在普通终端运行：提权会话里的拒绝，以及 `ProtectModels` 收尾的 `still writable`，都是提权令牌下的预期结果；原因与验证方法见 `deploy/windows/README.md` 的开发实例小节（#8）。
 - 应用在 `BEEBOX_DEV_INSTANCE=1` 时拒绝任何落在 `BEEBOX_PROD_ROOT` 内的可写路径（数据、日志、上传、派生音频、模型缓存），并拒绝模型下载/删除/清理（`409 MODEL_STORAGE_READ_ONLY`），只允许读取共享模型。不要绕过或删除这些守卫。
 - 需要真实模型时，先确保开发实例已启动，再运行：
 
