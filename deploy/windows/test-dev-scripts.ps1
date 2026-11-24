@@ -7,6 +7,9 @@
     Proves, without a GPU, real models or the production service:
 
     * the path guards reject dev layouts that overlap production;
+    * Invoke-BeeBoxNativeCapture and Invoke-NativeCommand keep stderr when a
+      native command exits 0 under $ErrorActionPreference = 'Stop', instead of
+      aborting the deploy on a NativeCommandError;
     * Invoke-BeeBoxQueueExclusive pauses the queue, waits for the running job,
       resumes in a finally block when the body throws, and leaves an
       operator-paused queue untouched.
@@ -144,6 +147,81 @@ foreach ($case in $overlapCases) {
     Assert-HelperThrows -Action { Assert-BeeBoxDevIsolation @parameters } -Message "Rejected: $name."
 }
 Assert-True -Condition (-not (Test-BeeBoxPathWithin -Path 'C:\BeeBoxDev' -Parent 'C:\BeeBox')) -Message 'C:\BeeBoxDev is a sibling of C:\BeeBox, not a child.'
+
+# ---------------------------------------------------------------------------
+# Native command stderr under $ErrorActionPreference = 'Stop'
+# ---------------------------------------------------------------------------
+# Windows PowerShell 5.1 wraps every native stderr line in NativeCommandError.
+# Under $ErrorActionPreference = 'Stop' that aborts the script even when the
+# command exits 0; a real deploy died twice this way (git fetch printing
+# "From ...", uv sync printing progress) and stopped the production service.
+# Invoke-BeeBoxNativeCapture and Invoke-NativeCommand survive with two guards:
+# they relax the preference for the native call and redirect stderr into a
+# temporary file. Both guards are load-bearing, so these checks fail if a
+# refactor drops either one. The red proof (drop the relaxation and these
+# checks fail) is specific to Windows PowerShell 5.1, the CI interpreter;
+# PowerShell 7 no longer turns native stderr into an error record.
+Write-Step 'Native command stderr under a Stop preference'
+$stderrProbeArguments = @('/c', 'echo stdout-line & echo stderr-line 1>&2')
+
+# Pin the preference locally. The checks are only meaningful under Stop, and
+# relying on the file-level default would silently neuter them if this block
+# moves or that default changes.
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = 'Stop'
+try {
+    $capture = $null
+    $captureThrew = $false
+    $captureError = ''
+    try {
+        $capture = Invoke-BeeBoxNativeCapture -FilePath $env:ComSpec -Arguments $stderrProbeArguments
+    }
+    catch {
+        $captureThrew = $true
+        $captureError = $_.Exception.Message
+    }
+
+    $nativeCommandOutput = @()
+    $nativeCommandExitCode = $null
+    $nativeCommandThrew = $false
+    $nativeCommandError = ''
+    try {
+        $nativeCommandOutput = @(& { Invoke-NativeCommand -FilePath $env:ComSpec -Arguments $stderrProbeArguments } 6>&1)
+        # The helper returns nothing and throws on a non-zero exit, so
+        # $LASTEXITCODE is the observable for "the native command succeeded";
+        # read it before any other command runs.
+        $nativeCommandExitCode = $LASTEXITCODE
+    }
+    catch {
+        $nativeCommandThrew = $true
+        $nativeCommandError = $_.Exception.Message
+    }
+}
+finally {
+    $ErrorActionPreference = $previousEap
+}
+
+Assert-True -Condition (-not $captureThrew) -Message ("Invoke-BeeBoxNativeCapture returns instead of throwing when a native command writes stderr and exits 0. Error: " + $captureError)
+
+$captureExitCode = -1
+$captureText = ''
+if ($null -ne $capture) {
+    $captureExitCode = [int]$capture.ExitCode
+    $captureText = [string]$capture.Text
+}
+Assert-True -Condition ($captureExitCode -eq 0) -Message 'Invoke-BeeBoxNativeCapture reports exit code 0.'
+Assert-True -Condition ($captureText -match 'stdout-line') -Message 'Invoke-BeeBoxNativeCapture keeps the stdout line.'
+Assert-True -Condition ($captureText -match 'stderr-line') -Message 'Invoke-BeeBoxNativeCapture keeps the stderr line.'
+
+Assert-True -Condition (-not $nativeCommandThrew) -Message ("Invoke-NativeCommand returns instead of throwing when a native command writes stderr and exits 0. Error: " + $nativeCommandError)
+
+if (-not $nativeCommandThrew) {
+    Assert-True -Condition ($nativeCommandExitCode -eq 0) -Message 'Invoke-NativeCommand leaves exit code 0 for a command that writes stderr and exits 0.'
+}
+
+$nativeCommandText = (@($nativeCommandOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+Assert-True -Condition ($nativeCommandText -match 'stdout-line') -Message 'Invoke-NativeCommand keeps the stdout line.'
+Assert-True -Condition ($nativeCommandText -match 'stderr-line') -Message 'Invoke-NativeCommand shows the stderr line through the information stream.'
 
 # ---------------------------------------------------------------------------
 # Fake /v1/queue server (loopback, TcpListener, no URL ACL needed)

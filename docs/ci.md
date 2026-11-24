@@ -22,11 +22,11 @@
 | 服务配置渲染检查 | 导入 `BeeBox.Common.psm1` 并调用 `Write-BeeBoxServiceXml` | 用样例值生成 XML，断言自动启动、崩溃重启、`resetfailure`、日志目录与关键环境变量 |
 | DryRun 检查（install） | `install.ps1 -Root <临时目录> -AppSource . -DryRun` | 断言退出码为 0、目标目录未被创建、输出包含安装步骤。不 clone、不下载、不注册服务、不需要管理员 |
 | DryRun 检查（deploy） | `deploy.ps1 -Tag v0.0.0-dry-run -Root <临时目录> -DryRun` | 断言退出码为 0、目标目录未被创建，输出按顺序包含暂停队列、等待任务、准备/切换 tag、`uv sync --frozen`、数据库迁移、停止/启动服务、健康检查、恢复队列。不发 HTTP、不 fetch、不动服务 |
-| 开发实例隔离与恢复检查 | `test-dev-scripts.ps1` | 纯路径守卫用例；再用 loopback 上的假 `/v1/queue` 服务断言：body 抛异常时仍恢复队列、操作员已暂停的队列不被改动。不接触线上端口或真实模型 |
+| 开发实例隔离、原生命令与恢复检查 | `test-dev-scripts.ps1` | 纯路径守卫用例；两个原生命令 helper 在 `$ErrorActionPreference = 'Stop'` 下遇到写 stderr 但退出码为 0 的命令不中止，`Invoke-BeeBoxNativeCapture` 保留 stdout 与 stderr，`Invoke-NativeCommand` 透传 stdout/stderr 且退出码为 0；再用 loopback 上的假 `/v1/queue` 服务断言：body 抛异常时仍恢复队列、操作员已暂停的队列不被改动。不接触线上端口或真实模型 |
 | 开发实例 DryRun | `dev-instance.ps1 -Action Start -DevRoot <临时目录> -ProdRoot <临时目录> -DryRun` | 断言退出码为 0、没有创建目录、输出包含端口 17495 与 `BEEBOX_DEV_INSTANCE=1` |
 | 真实模型脚本 DryRun | `run-real-tests.ps1 -DevRoot <临时目录> -ProdRoot <临时目录> -DryRun` | 断言退出码为 0、没有创建目录、输出包含 pause/resume 计划；不访问线上队列 |
 
-部署脚本 job 使用 Windows PowerShell 5.1（`shell: powershell`），与目标机器默认解释器一致；脚本同时保持 PowerShell 7 兼容。
+部署脚本 job 使用 Windows PowerShell 5.1（`shell: powershell`），与目标机器默认解释器一致；脚本同时保持 PowerShell 7 兼容，但原生命令 stderr 守卫的红绿验证以 5.1 为准（PowerShell 7 不再把原生命令的 stderr 当作错误记录）。
 
 ### console build
 

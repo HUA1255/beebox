@@ -257,11 +257,12 @@ jobs:
           }
           Write-Host $text
 
-      - name: Verify dev-instance isolation guards and queue resume
+      - name: Verify dev-instance isolation guards, native stderr handling and queue resume
         shell: powershell
         run: |
-          # Pure path guards plus a loopback fake /v1/queue server: this never
-          # contacts the production service (port 17494) or a real model.
+          # Pure path guards, native-stderr guards under a Stop preference and
+          # a loopback fake /v1/queue server: this never contacts the
+          # production service (port 17494) or a real model.
           & powershell -NoProfile -ExecutionPolicy Bypass -File ./deploy/windows/test-dev-scripts.ps1 2>&1
           if ($LASTEXITCODE -ne 0) {
             throw "test-dev-scripts.ps1 failed with exit code $LASTEXITCODE."
