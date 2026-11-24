@@ -6,6 +6,8 @@ BeeBox 是家里的语音 AI 服务：在 Windows 11 GPU 主机上原生运行�
 
 ## 先读什么
 
+如果仓库根目录存在 `AGENTS.local.md`（本机私有说明，不提交），先读它；它可以补充本机约束，但不能放宽本文件的隐私和推送规则。
+
 1. 当前 GitHub issue 的 Acceptance criteria —— 本次改动的规格。
 2. `GLOSSARY.md` —— 领域术语。写 issue、测试名与提交信息时使用其中定义的词，不要使用 `_Avoid_` 列出的同义词。
 3. `docs/adr/` —— 与本区域相关的决策。当前有效的是 0007–0013：
