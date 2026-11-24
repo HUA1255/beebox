@@ -23,7 +23,7 @@ ADR 与 issue 冲突时先指出冲突，不要静默覆盖。
 
 ## Issue 与 triage
 
-Issues 在 GitHub 的 `HUA1255/beebox`，用 `gh` 操作；父子关系用 sub-issue，依赖用原生 blocked-by。完整命令见 `docs/agents/issue-tracker.md`。
+Issues 在 GitHub 的 `HUA1255/beebox`，用 `gh` 操作；父子关系用 sub-issue，依赖用原生 blocked-by。查询依赖（`issue_dependencies_summary`）、批量读取或写入 issue 前先读 `docs/agents/issue-tracker.md` 里的命令。
 
 triage 标签只有五个，标签字符串与角色同名：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。含义见 `docs/agents/triage-labels.md`。
 
@@ -68,6 +68,9 @@ uv run pytest backend/tests/test_api.py -q
 
 # 部署脚本安全检查（不需要管理员，也不会改动机器）
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\install.ps1 -DryRun
+
+# 部署脚本守卫测试（路径守卫、原生命令 stderr、队列恢复；与 CI 同款，不需要管理员/GPU/网络）
+powershell -ExecutionPolicy Bypass -File .\deploy\windows\test-dev-scripts.ps1
 
 # 开发实例（与线上实例隔离，从同一 checkout 运行；详见下节）
 powershell -ExecutionPolicy Bypass -File .\deploy\windows\dev-instance.ps1 -Action Start
