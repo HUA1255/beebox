@@ -1,6 +1,6 @@
 [project]
 name = "beebox"
-version = "1.0.1"
+version = "1.0.2"
 description = "Local-first speech transcription backend for Windows"
 license = "GPL-3.0-only"
 requires-python = ">=3.12,<3.13"

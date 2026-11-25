@@ -218,7 +218,7 @@ def test_health_reports_online_readiness_version_and_commit(client: TestClient) 
     body = response.json()
     assert body["online"] is True
     assert body["ready"] is True
-    assert body["version"] == "1.0.1"
+    assert body["version"] == "1.0.2"
     assert body["commit"] == "0123456789abcdef0123456789abcdef01234567"
 
 

@@ -132,7 +132,7 @@ test.describe("BeeBox 控制台", () => {
 
     await expect(page.getByTestId("health-online")).toHaveText("是");
     await expect(page.getByTestId("health-ready")).toHaveText("是");
-    await expect(page.getByTestId("health-version")).toHaveText("1.0.1");
+    await expect(page.getByTestId("health-version")).toHaveText("1.0.2");
     await expect(page.getByTestId("queue-paused")).toHaveText(/运行中|已暂停/);
     await expect(page.getByTestId("queue-length")).toBeVisible();
     await expect(page.getByTestId("queue-current")).toBeVisible();
