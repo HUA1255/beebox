@@ -123,6 +123,7 @@ def _parse_host(
             ),
             original_url=original,
             part=part,
+            short_link=form.short_link,
         )
     raise UnsupportedUrlError(host_rule.unsupported_message)
 

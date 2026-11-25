@@ -955,7 +955,7 @@
                 "type": "null"
               }
             ],
-            "description": "Original video link for type=url (Bilibili, YouTube, X or Zhihu), kept exactly as submitted",
+            "description": "Original video link for type=url (Bilibili, YouTube, X or Zhihu), kept exactly as submitted; a t.co short link stays the submitted short link after the job expands it",
             "title": "Url"
           }
         },
@@ -994,7 +994,7 @@
                 "type": "null"
               }
             ],
-            "description": "Bilibili, YouTube, X single-post or Zhihu video URL for type=url (ticket #42); X posts and Zhihu zvideos are transcribed from their audio, so they never use platform subtitles",
+            "description": "Bilibili, YouTube, X single-post or Zhihu video URL for type=url (ticket #42); X posts and Zhihu zvideos are transcribed from their audio, so they never use platform subtitles. An X post's https://t.co/<token> short link is accepted offline and expanded when the job starts",
             "title": "Url"
           }
         },

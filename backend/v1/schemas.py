@@ -194,7 +194,9 @@ class JobSourceRequest(BaseModel):
         description=(
             "Bilibili, YouTube, X single-post or Zhihu video URL for type=url "
             "(ticket #42); X posts and Zhihu zvideos are transcribed from "
-            "their audio, so they never use platform subtitles"
+            "their audio, so they never use platform subtitles. An X post's "
+            "https://t.co/<token> short link is accepted offline and expanded "
+            "when the job starts"
         ),
     )
 
@@ -243,7 +245,8 @@ class JobSourceInfo(BaseModel):
         default=None,
         description=(
             "Original video link for type=url (Bilibili, YouTube, X or Zhihu), "
-            "kept exactly as submitted"
+            "kept exactly as submitted; a t.co short link stays the submitted "
+            "short link after the job expands it"
         ),
     )
     title: str | None = Field(default=None, description="Video title for type=url")

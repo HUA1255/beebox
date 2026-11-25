@@ -1,9 +1,11 @@
-"""X single-post link recognition (ticket #28).
+"""X single-post link recognition (tickets #28 and #29).
 
 Recognition is pure and offline: only ``/<user>/status/<id>`` is a post, and
 everything else on x.com/twitter.com (home, search, lists, profiles, non-status
-paths and the site's own ``/i/...`` pages) is unsupported. X posts offer no
-usable platform subtitles, which the rule table records as a capability.
+paths and the site's own ``/i/...`` pages) is unsupported. A ``t.co`` short
+link is accepted offline and marked so the job expands it at task start. X
+posts offer no usable platform subtitles, which the rule table records as a
+capability.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from backend.services.video_platform import (
 
 X_POST_URL = "https://x.com/BeeBoxTest/status/1234567890123456789"
 X_POST_ID = "1234567890123456789"
+TCO_URL = "https://t.co/BeeBoxFake29"
 
 
 @pytest.mark.parametrize(
@@ -83,5 +86,42 @@ def test_x_capabilities_describe_a_single_post_without_platform_subtitles() -> N
     assert rule.capabilities.has_platform_subtitles is False
     assert rule.capabilities.requires_login is False
     assert rule.capabilities.has_parts is False
-    # t.co short links belong to ticket #29, not to this rule.
-    assert rule.capabilities.has_short_links is False
+    # t.co short links are accepted offline and expanded by the job (ticket #29).
+    assert rule.capabilities.has_short_links is True
+
+
+# ---------------------------------------------------------------------------
+# t.co short links (ticket #29)
+# ---------------------------------------------------------------------------
+
+
+def test_a_tco_short_link_is_an_x_short_link_without_a_known_id() -> None:
+    ref = parse_video_url(TCO_URL)
+
+    assert ref.platform == PLATFORM_X
+    assert ref.short_link is True
+    # The token is opaque; only expansion at task start can reveal the post.
+    assert ref.video_id == "BeeBoxFake29"
+    assert ref.canonical_url == TCO_URL
+    assert ref.original_url == TCO_URL
+    assert ref.part is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://t.co/",
+        "https://t.co/BeeBoxFake29/extra",
+    ],
+)
+def test_a_tco_url_that_is_not_a_short_link_is_unsupported(url: str) -> None:
+    with pytest.raises(UnsupportedUrlError):
+        parse_video_url(url)
+
+
+def test_the_short_link_marker_is_only_set_for_tco() -> None:
+    # A plain post is known offline, and b23.tv/youtu.be links are resolved by
+    # the downloader, so neither is a short link the job must expand.
+    assert parse_video_url(X_POST_URL).short_link is False
+    assert parse_video_url("https://b23.tv/BV1Gt411c7mD").short_link is False
+    assert parse_video_url("https://youtu.be/dQw4w9WgXcQ").short_link is False
