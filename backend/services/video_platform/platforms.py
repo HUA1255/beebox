@@ -49,6 +49,8 @@ class UrlForm:
     link is resolved by the downloader.
     ``part_query`` names the query parameter that selects a multi-part index
     and ``part_error`` is the unsupported-link message for a bad value.
+    ``short_link`` marks a link whose target is only known after a network
+    request (a t.co short link), so the job expands it at task start.
     """
 
     path: re.Pattern[str]
@@ -57,6 +59,7 @@ class UrlForm:
     part_query: str | None = None
     part_error: str = "Invalid part number: {value!r}"
     video_id_pattern: re.Pattern[str] | None = None
+    short_link: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,10 @@ _X_POST_PATH = re.compile(r"^/(?P<user>[A-Za-z0-9_]+)/status/(?P<id>[0-9]+)/?$")
 # status links); none of them is a post to transcribe.
 _X_INTERNAL_PATH = re.compile(r"^/i(?:/|$)")
 _X_UNSUPPORTED_MESSAGE = "The X link does not point to a single post"
+
+# A t.co link is exactly one opaque token; its target is only known online.
+_TCO_SHORT_LINK_PATH = re.compile(r"^/(?P<id>[A-Za-z0-9_-]+)/?$")
+_TCO_UNSUPPORTED_MESSAGE = "The t.co URL is not a short link"
 
 # Zhihu's single videos are zvideo pages with a numeric id; answers, articles,
 # columns and questions are different pages and stay unsupported.
@@ -214,25 +221,41 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
             # Public posts need no cookie; age-restricted posts are refused.
             requires_login=False,
             has_parts=False,
-            # t.co short links are ticket #29, not part of this rule.
-            has_short_links=False,
+            # A t.co short link is accepted offline and expanded by the job
+            # before any download (ticket #29).
+            has_short_links=True,
         ),
-        hosts=tuple(
+        hosts=(
+            *(
+                HostRule(
+                    host=host,
+                    forms=(
+                        UrlForm(
+                            path=_X_POST_PATH,
+                            # Normalize both hosts (and their subdomains) to the
+                            # x.com post; the submitted query never selects content.
+                            canonical="https://x.com/{user}/status/{id}",
+                        ),
+                    ),
+                    unsupported_message=_X_UNSUPPORTED_MESSAGE,
+                    reject_path=_X_INTERNAL_PATH,
+                    reject_path_message="X internal pages are not posts",
+                )
+                for host in ("x.com", "twitter.com")
+            ),
             HostRule(
-                host=host,
+                host="t.co",
                 forms=(
                     UrlForm(
-                        path=_X_POST_PATH,
-                        # Normalize both hosts (and their subdomains) to the
-                        # x.com post; the submitted query never selects content.
-                        canonical="https://x.com/{user}/status/{id}",
+                        path=_TCO_SHORT_LINK_PATH,
+                        # The target is unknown offline; keep the submitted
+                        # link until the job expands it.
+                        canonical=None,
+                        short_link=True,
                     ),
                 ),
-                unsupported_message=_X_UNSUPPORTED_MESSAGE,
-                reject_path=_X_INTERNAL_PATH,
-                reject_path_message="X internal pages are not posts",
-            )
-            for host in ("x.com", "twitter.com")
+                unsupported_message=_TCO_UNSUPPORTED_MESSAGE,
+            ),
         ),
     ),
     PlatformRule(

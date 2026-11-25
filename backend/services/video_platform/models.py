@@ -37,6 +37,9 @@ class VideoRef:
     ``part`` is the Bilibili multi-part index (``?p=N``), defaulting to 1; it
     stays ``None`` for platforms without the concept. ``canonical_url`` points
     at exactly that part so a download never covers the whole list.
+    ``short_link`` marks a link whose target is unknown offline (a t.co short
+    link): the job expands it at task start, before any metadata or media
+    request, instead of trusting ``video_id`` still to be an opaque token.
     """
 
     platform: str
@@ -44,6 +47,7 @@ class VideoRef:
     canonical_url: str
     original_url: str
     part: int | None = None
+    short_link: bool = False
 
 
 @dataclass(frozen=True)
