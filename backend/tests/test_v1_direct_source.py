@@ -467,7 +467,9 @@ def test_responses_over_the_upload_cap_fail_as_file_too_large(
 
     assert finished["status"] == "failed", finished
     assert finished["error_code"] == "FILE_TOO_LARGE", finished
-    assert finished["retryable"] is False, finished
+    # Spec #18 never calls an oversized response non-retryable: the caller may
+    # retry with a smaller file, so the default retryable behaviour applies.
+    assert finished["retryable"] is True, finished
     assert uploads_for(tmp_path / "uploads", job_id) == []
 
 

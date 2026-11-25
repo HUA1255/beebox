@@ -56,13 +56,9 @@ _HTTP_CODES: dict[str, tuple[int | None, str]] = {
     "UNSUPPORTED_KIND": (400, "The requested job kind is not supported in v1."),
     "UNSUPPORTED_SOURCE_TYPE": (400, "The requested source type is not supported in v1."),
     "INVALID_SOURCE": (400, "The source is missing a field the chosen source type requires."),
-    "INVALID_URL": (400, "The video link is not a valid absolute URL."),
-    "UNSUPPORTED_URL": (
-        400,
-        "The link is not a supported single video on Bilibili, YouTube, X or "
-        "Zhihu "
-        "(other hosts, playlists, collections and live streams are refused).",
-    ),
+    # The meaning is owned by the job-level catalog so the two cannot drift.
+    "INVALID_URL": (400, ERROR_CODES["INVALID_URL"]),
+    "UNSUPPORTED_URL": (400, ERROR_CODES["UNSUPPORTED_URL"]),
     "MODEL_NOT_FOUND": (400, "The requested model is not present in the model registry."),
     "MODEL_COMPATIBILITY_FAILED": (409, "The model cannot run on the detected runtime."),
     "MODEL_ALREADY_DOWNLOADED": (409, "The model is already downloaded and complete."),

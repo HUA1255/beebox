@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.services.video_platform import (
+    PLATFORM_X,
     DownloadNetworkError,
     DownloadOptions,
     DownloadTimeoutError,
@@ -22,6 +23,7 @@ from backend.services.video_platform import (
 
 TCO_URL = "https://t.co/BeeBoxFake29"
 X_POST_URL = "https://x.com/BeeBoxTest/status/1234567890123456789"
+X_POST_ID = "1234567890123456789"
 PROXY = "http://127.0.0.1:3128"
 MAX_REDIRECTS = 10
 
@@ -157,15 +159,21 @@ def test_an_error_status_is_a_download_network_error(monkeypatch) -> None:
         "https://x.com/i/flow/login",
         "https://x.com/i/flow/login?redirect_after_login=%2FBeeBoxTest",
         "https://x.com/i/flow/signup",
+        "https://x.com/i/flow/consent",
         "https://x.com/login",
+        "https://x.com/login/",
         "https://www.x.com/account/access",
+        "https://x.com/account/verify",
+        "https://x.com/i/verify",
+        "https://x.com/verify",
         "https://twitter.com/i/flow/login",
         "https://twitter.com/login",
+        "https://twitter.com/account/verify",
         "https://mobile.twitter.com/account/access",
     ],
 )
 def test_login_and_verification_pages_are_recognized(url: str) -> None:
-    assert short_links.is_login_page(url) is True
+    assert short_links.is_login_page(url, platform=PLATFORM_X) is True
 
 
 @pytest.mark.parametrize(
@@ -176,7 +184,17 @@ def test_login_and_verification_pages_are_recognized(url: str) -> None:
         "https://x.com/home",
         "https://example.com/i/flow/login",
         TCO_URL,
+        # The signed-in permalinks are posts, not login pages.
+        f"https://x.com/i/web/status/{X_POST_ID}",
+        f"https://x.com/i/status/{X_POST_ID}",
     ],
 )
 def test_content_pages_are_not_login_pages(url: str) -> None:
-    assert short_links.is_login_page(url) is False
+    assert short_links.is_login_page(url, platform=PLATFORM_X) is False
+
+
+def test_a_platform_without_login_paths_has_no_login_pages() -> None:
+    # Only X declares login paths in its platform rule; a page on another
+    # platform is never classified as a login wall.
+    assert short_links.is_login_page("https://x.com/i/flow/login", platform="zhihu") is False
+    assert short_links.is_login_page("https://x.com/i/flow/login", platform="unknown") is False

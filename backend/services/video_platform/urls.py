@@ -123,7 +123,9 @@ def _parse_host(
             ),
             original_url=original,
             part=part,
-            short_link=form.short_link,
+            # A short form is only a short link when the platform rule says the
+            # job has a way to expand one (ticket #29).
+            short_link=form.short_link and rule.capabilities.has_short_links,
         )
     raise UnsupportedUrlError(host_rule.unsupported_message)
 

@@ -1,11 +1,12 @@
 """X single-post link recognition (tickets #28 and #29).
 
-Recognition is pure and offline: only ``/<user>/status/<id>`` is a post, and
-everything else on x.com/twitter.com (home, search, lists, profiles, non-status
-paths and the site's own ``/i/...`` pages) is unsupported. A ``t.co`` short
-link is accepted offline and marked so the job expands it at task start. X
-posts offer no usable platform subtitles, which the rule table records as a
-capability.
+Recognition is pure and offline: ``/<user>/status/<id>`` and the signed-in
+permalink shapes ``/i/web/status/<id>`` and ``/i/status/<id>`` are posts, and
+everything else on x.com/twitter.com (home, search, lists, profiles,
+non-status paths and the site's other ``/i/...`` pages) is unsupported. A
+``t.co`` short link is accepted offline and marked so the job expands it at
+task start. X posts offer no usable platform subtitles, which the rule table
+records as a capability.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from backend.services.video_platform import (
 
 X_POST_URL = "https://x.com/BeeBoxTest/status/1234567890123456789"
 X_POST_ID = "1234567890123456789"
+X_PERMALINK_URL = f"https://x.com/i/web/status/{X_POST_ID}"
 TCO_URL = "https://t.co/BeeBoxFake29"
 
 
@@ -40,6 +42,20 @@ TCO_URL = "https://t.co/BeeBoxFake29"
             # Subdomains and the legacy host are normalized to the x.com post.
             "https://mobile.twitter.com/BeeBoxTest/status/1234567890123456789/?s=20&t=abc",
             X_POST_URL,
+        ),
+        # Signed-in permalinks address the same post without the account name.
+        (X_PERMALINK_URL, X_PERMALINK_URL),
+        (
+            f"https://twitter.com/i/web/status/{X_POST_ID}",
+            X_PERMALINK_URL,
+        ),
+        (
+            f"https://x.com/i/status/{X_POST_ID}",
+            X_PERMALINK_URL,
+        ),
+        (
+            f"https://mobile.twitter.com/i/status/{X_POST_ID}?s=20",
+            X_PERMALINK_URL,
         ),
     ],
 )
@@ -67,7 +83,9 @@ def test_a_single_x_post_link_is_recognized(url: str, canonical: str) -> None:
         "https://x.com/BeeBoxTest/status/",
         "https://x.com/i/lists/123456",
         "https://x.com/i/flow/login",
-        "https://x.com/i/web/status/1234567890123456789",
+        # Other /i/... pages are not posts either.
+        "https://x.com/i/verify",
+        f"https://x.com/i/status/not-a-number-{X_POST_ID}",
         "https://twitter.com/search?q=BeeBox",
         "https://twitter.com/i/flow/signup",
     ],

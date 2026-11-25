@@ -111,6 +111,34 @@ def test_a_tco_link_expands_to_an_x_post_and_is_transcribed_from_audio(
     assert ASR_TEXT in result["text"]
 
 
+def test_a_tco_link_that_expands_to_an_x_permalink_is_transcribed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A t.co link may land on the signed-in permalink, which is still the post."""
+    permalink = f"https://x.com/i/web/status/{X_POST_ID}"
+    client, root = configure_client(
+        tmp_path,
+        monkeypatch,
+        [fake_x_post(url=permalink)],
+        asr=True,
+        bilibili_login="absent",
+    )
+    install_expander(monkeypatch, permalink)
+
+    created = create_url_job(client, TCO_URL)
+    assert created.status_code == 201, created.text
+    finished = wait_for(client, created.json()["id"])
+
+    assert finished["status"] == "succeeded", finished
+    assert finished["source"]["url"] == TCO_URL
+    assert finished["source"]["platform"] == PLATFORM_X
+    assert finished["source"]["text_source"] == "asr"
+    platform_calls = read_calls(root)
+    assert [call["stage"] for call in platform_calls] == ["metadata", "audio"]
+    assert platform_calls[0]["url"] == permalink
+    assert platform_calls[0]["video_id"] == X_POST_ID
+
+
 def test_the_download_proxy_reaches_expansion_and_the_platform_calls(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -182,6 +210,8 @@ def test_a_short_link_that_is_not_an_x_post_fails_before_downloading(
         "https://x.com/i/flow/signup",
         "https://x.com/login",
         "https://x.com/account/access",
+        "https://x.com/account/verify",
+        "https://x.com/i/verify",
         "https://twitter.com/i/flow/login",
     ],
 )

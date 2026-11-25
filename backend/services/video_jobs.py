@@ -26,12 +26,15 @@ audio/ASR (#44)
     is BeeBox-owned temporary media and ticket #40's completion cleanup drops
     it. A caller-specified ``subtitle_language`` never falls back to another
     language: the job fails with ``VIDEO_SUBTITLE_UNAVAILABLE`` instead.
+
+The option plumbing, the post-download hand-off and the failure record are
+shared with the direct media source through
+:mod:`backend.services.link_jobs`; only what a media link does differently
+(metadata, subtitle selection, the audio fetch) lives here.
 """
 
 from __future__ import annotations
 
-import json
-import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -42,24 +45,18 @@ from backend import config
 from backend.database import session as db_session
 from backend.database.models import TranscriptionTask
 from backend.models import TranscriptSegment
-from backend.services import diagnostics
-from backend.services import models as model_service
-from backend.services import settings as settings_service
+from backend.services import bilibili_login
+from backend.services import link_jobs
 from backend.services import task_logs
 from backend.services import task_runtime
 from backend.services import tasks as task_service
-from backend.services import bilibili_login
-from backend.services.errors import BeeBoxError
 from backend.services.paragraphs import assign_paragraphs
-from backend.services.task_options import DEFAULT_OUTPUT_FORMATS, read_task_options
+from backend.services.task_options import read_task_options
 from backend.services.video_platform import (
-    PLATFORM_BILIBILI,
-    PLATFORM_X,
     REASON_PREFER_ASR,
     REASON_SUBTITLE_LANGUAGE_UNAVAILABLE,
     TEXT_PATH_ASR,
     TEXT_PATH_SUBTITLE,
-    TEXT_SOURCE_ASR,
     TEXT_SOURCE_AUTO,
     TEXT_SOURCE_MANUAL,
     TEXT_SOURCE_PENDING,
@@ -84,40 +81,32 @@ from backend.services.video_platform import short_links
 from backend.utils.events import event_bus
 from backend.utils.transcript_text import transcript_text_from_segments
 
-logger = logging.getLogger(__name__)
-
 PREFER_ASR = "asr"
 VIDEO_SOURCE_TYPE = "url"
-# Downloaded audio is temporary BeeBox-owned media, not a caller upload and not
-# a path the caller owns; ADR-0011 cleanup deletes it with the finished job.
-SOURCE_KIND_DOWNLOAD = "download"
-DEFAULT_VIDEO_FAILURE_CODE = "VIDEO_PLATFORM_FAILED"
 
-
-def _write_options(row: TranscriptionTask, options: dict[str, Any]) -> None:
-    row.options_json = json.dumps(options, ensure_ascii=False)
-
-
-def _source(options: dict[str, Any]) -> dict[str, Any]:
-    value = options.get("_v1_source")
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _request(options: dict[str, Any]) -> dict[str, Any]:
-    value = options.get("_video_request")
-    return dict(value) if isinstance(value, dict) else {}
+# Re-exported for compatibility with callers that imported the link helpers
+# from this module; the implementation lives in
+# :mod:`backend.services.link_jobs` so both link sources share one copy.
+DEFAULT_VIDEO_FAILURE_CODE = link_jobs.DEFAULT_LINK_FAILURE_CODE
+SOURCE_KIND_DOWNLOAD = link_jobs.SOURCE_KIND_DOWNLOAD
+record_job_failure = link_jobs.record_job_failure
+requested_asr_options = link_jobs.requested_asr_options
+resolve_asr_model_name = link_jobs.resolve_asr_model_name
 
 
 def is_video_job(row: TranscriptionTask) -> bool:
     """True when the job was created from a video link."""
-    return _source(read_task_options(row)).get("type") == VIDEO_SOURCE_TYPE
+    return (
+        link_jobs.source_from_options(read_task_options(row)).get("type")
+        == VIDEO_SOURCE_TYPE
+    )
 
 
 def is_audio_video_job(row: TranscriptionTask) -> bool:
     """True once a video job has chosen the speech-recognition path."""
     options = read_task_options(row)
     return (
-        _source(options).get("type") == VIDEO_SOURCE_TYPE
+        link_jobs.source_from_options(options).get("type") == VIDEO_SOURCE_TYPE
         and options.get("_video_text_path") == TEXT_PATH_ASR
     )
 
@@ -129,21 +118,6 @@ def runs_outside_gpu_queue(row: TranscriptionTask) -> bool:
     never touches it at all (ADR-0009).
     """
     return is_video_job(row) and not is_audio_video_job(row)
-
-
-def _base_options(source: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "output_formats": list(DEFAULT_OUTPUT_FORMATS),
-        # A subtitle job never has audio to diarize; the ASR branch replaces
-        # this with the caller's preference (default on, like file jobs).
-        "diarization": False,
-        # A URL job owns no media file yet, so delete/retention must never
-        # unlink a path on its behalf until the audio path stores one.
-        "_source_kind": "external",
-        "_video_text_path": TEXT_PATH_SUBTITLE,
-        "_video_request": request,
-        "_v1_source": source,
-    }
 
 
 def _with_selection_options(
@@ -174,28 +148,12 @@ def _create_row(
         audio_path="",
         status="queued",
         progress=0,
-        options_json=json.dumps(options, ensure_ascii=False),
     )
+    link_jobs.write_options(row, options)
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
-
-
-def requested_asr_options(options: dict[str, Any] | None) -> dict[str, Any]:
-    """Keep the contract fields that the ASR branch needs, nothing else.
-
-    Shared with the direct media source (#32), which joins the same ASR path.
-    """
-    requested = options if isinstance(options, dict) else {}
-    kept: dict[str, Any] = {}
-    for key in ("prefer", "language", "model", "num_speakers", "diarization"):
-        value = requested.get(key)
-        if value is not None:
-            kept[key] = value
-    if isinstance(kept.get("prefer"), str):
-        kept["prefer"] = kept["prefer"].strip().lower()
-    return kept
 
 
 def create_video_job(
@@ -218,7 +176,7 @@ def create_video_job(
     speakers, diarization) the ASR branch needs.
     """
     value = (url or "").strip()
-    request = requested_asr_options(options)
+    request = link_jobs.requested_asr_options(options)
     ref = parse_video_url(value)
 
     source = {
@@ -234,16 +192,13 @@ def create_video_job(
         db,
         filename=ref.original_url,
         options=_with_selection_options(
-            _base_options(source, request), subtitle_language, prefer
+            link_jobs.base_options(source, request, text_path=TEXT_PATH_SUBTITLE),
+            subtitle_language,
+            prefer,
         ),
     )
     task_service.start_task_in_background(row.id)
     return row
-
-
-def _check_cancelled(row: TranscriptionTask) -> None:
-    if row.status == "cancelled" or task_runtime.is_cancelled(row.id):
-        raise BeeBoxError("TASK_CANCELLED", "Task was cancelled", stage="cancel")
 
 
 def _cues_to_segments(cues: tuple[SubtitleCue, ...]) -> list[TranscriptSegment]:
@@ -288,7 +243,7 @@ def _store_metadata(
     )
     row.filename = info.title or row.filename
     options["_v1_source"] = source
-    _write_options(row, options)
+    link_jobs.write_options(row, options)
     db.commit()
     task_logs.add_log(
         db,
@@ -298,19 +253,6 @@ def _store_metadata(
         "Video metadata fetched",
         {"title": info.title, "tracks": len(info.tracks), "duration_ms": info.duration_ms},
     )
-
-
-def resolve_asr_model_name(db: Session, request: dict[str, Any]) -> str:
-    """The model an ASR job will run; an unknown model fails before download.
-
-    Shared with the direct media source (#32) so both link types behave alike.
-    """
-    requested = request.get("model")
-    settings = settings_service.get_settings(db)
-    name = str(requested or settings.default_model_name or config.DEFAULT_LOCAL_MODEL_NAME)
-    if model_service.get_model_config(name) is None:
-        raise BeeBoxError("MODEL_NOT_FOUND", f"Unknown model: {name}", stage="waiting_model")
-    return name
 
 
 def _download_audio(
@@ -325,9 +267,9 @@ def _download_audio(
 ) -> None:
     """Download only the audio stream and hand the job to the GPU queue."""
     destination = config.get_uploads_dir() / f"{row.id}.wav"
-    request = _request(options)
+    request = link_jobs.request_from_options(options)
     # Resolve the model before spending a download on a job that cannot run.
-    model_name = resolve_asr_model_name(db, request)
+    model_name = link_jobs.resolve_asr_model_name(db, request)
     task_logs.add_log(
         db,
         row.id,
@@ -337,10 +279,10 @@ def _download_audio(
         {"platform": ref.platform, "video_id": ref.video_id, "part": ref.part},
     )
     task_service.set_task_state(db, row, "preprocessing", 15)
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
     try:
         platform.download_audio(ref, destination, options=download)
-        _check_cancelled(row)
+        link_jobs.check_cancelled(row)
         if not destination.is_file():
             raise AudioDownloadError("The audio download produced no file")
     except BaseException:
@@ -349,35 +291,19 @@ def _download_audio(
         destination.unlink(missing_ok=True)
         raise
 
-    options.update(
-        {
-            "_source_kind": SOURCE_KIND_DOWNLOAD,
-            "_video_text_path": TEXT_PATH_ASR,
-            "diarization": bool(request.get("diarization", True)),
-        }
-    )
-    if request.get("num_speakers") is not None:
-        options["num_speakers"] = request["num_speakers"]
-    source.update({"text_source": TEXT_SOURCE_ASR, "subtitle_language": None})
-    options["_v1_source"] = source
-    _write_options(row, options)
-    row.audio_path = config.to_storage_path(destination)
-    row.source = "local"
-    row.model_name = model_name
-    if request.get("language") is not None:
-        row.language = request["language"]
-    db.commit()
-    task_logs.add_log(
-        db,
-        row.id,
-        "video",
-        "info",
-        "Audio download completed; queued for transcription",
-        {"model": row.model_name, "bytes": destination.stat().st_size},
-    )
     # The job re-enters through the normal queue seam: the GPU queue now owns
     # ordering, pausing and the one-at-a-time rule.
-    task_service.set_task_state(db, row, "queued", 0)
+    link_jobs.store_downloaded_audio(
+        db,
+        row,
+        options,
+        source,
+        audio_path=destination,
+        model_name=model_name,
+        request=request,
+        log_stage="video",
+        log_message="Audio download completed; queued for transcription",
+    )
 
 
 def _complete_from_subtitles(
@@ -399,9 +325,9 @@ def _complete_from_subtitles(
         {"language": track.language, "kind": track.kind, "format": track.format},
     )
     task_service.set_task_state(db, row, "transcribing", 40)
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
     document = platform.download_subtitle(track, options=download)
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
     cues = document.cues
     if track.kind == TRACK_KIND_AUTO:
         # Automatic captions roll and repeat; manual subtitles do not.
@@ -424,7 +350,7 @@ def _complete_from_subtitles(
         }
     )
     options["_v1_source"] = source
-    _write_options(row, options)
+    link_jobs.write_options(row, options)
     row.language = track.language
     row.text = transcript_text_from_segments(segments)
     if row.duration_ms is None:
@@ -442,7 +368,7 @@ def _complete_from_subtitles(
             "text_source": source["text_source"],
         },
     )
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
     row.status = "completed"
     row.progress = 100
     row.completed_at = datetime.now(UTC)
@@ -453,13 +379,14 @@ def _complete_from_subtitles(
 def _platform_subtitles_available(platform: str) -> bool:
     """Whether the platform's rule table offers usable subtitles (ticket #28).
 
-    X reports caption tracks that are not usable platform subtitles; its rule
-    carries ``has_platform_subtitles=False`` and every such job is transcribed
-    from audio. A platform missing from the table keeps the previous behaviour
-    because every accepted link comes from that table.
+    X and Zhihu report caption tracks that are not usable platform subtitles;
+    their rule carries ``has_platform_subtitles=False`` and every such job is
+    transcribed from audio. Only accepted links reach this point, so the rule
+    always exists; an unknown platform is treated as having no usable
+    subtitles rather than silently trusting the downloader's track list.
     """
     rule = platform_rule(platform)
-    return rule is None or rule.capabilities.has_platform_subtitles
+    return bool(rule and rule.capabilities.has_platform_subtitles)
 
 
 def _require_bilibili_login(
@@ -469,15 +396,18 @@ def _require_bilibili_login(
     ref,
     prefer_asr: bool,
 ) -> None:
-    """Refuse a Bilibili job unless a usable login is stored (ADR-0012).
+    """Refuse a job on a login-gated platform unless a usable login exists.
 
-    A Bilibili request without a login may silently lose the platform
-    subtitles and the higher-quality audio, which is exactly the downgrade
-    ADR-0012 forbids: the job fails with ``VIDEO_LOGIN_REQUIRED`` (retryable)
-    instead. ``prefer=asr`` is the caller's explicit choice to accept whatever
-    the anonymous audio contains, so it bypasses the gate.
+    The rule table decides which platforms are gated (ADR-0012); only Bilibili
+    sets ``requires_login``. A Bilibili request without a login may silently
+    lose the platform subtitles and the higher-quality audio, which is exactly
+    the downgrade ADR-0012 forbids: the job fails with
+    ``VIDEO_LOGIN_REQUIRED`` (retryable) instead. ``prefer=asr`` is the
+    caller's explicit choice to accept whatever the anonymous audio contains,
+    so it bypasses the gate.
     """
-    if ref.platform != PLATFORM_BILIBILI or prefer_asr:
+    rule = platform_rule(ref.platform)
+    if rule is None or not rule.capabilities.requires_login or prefer_asr:
         return
     status = bilibili_login.login_status()
     if not bilibili_login.login_unavailable(status):
@@ -520,7 +450,7 @@ def _expand_short_link(
         {"short_link": ref.original_url},
     )
     final_url = short_links.expand_short_link(ref.original_url, options=download)
-    if short_links.is_login_page(final_url):
+    if short_links.is_login_page(final_url, platform=ref.platform):
         raise LoginRequiredError(
             f"The short link {ref.original_url} led to a login or verification "
             "page; sign in and retry the job"
@@ -531,7 +461,7 @@ def _expand_short_link(
         raise UnsupportedUrlError(
             f"The short link {ref.original_url} does not point to a single X post"
         ) from exc
-    if expanded.platform != PLATFORM_X or expanded.short_link:
+    if expanded.platform != ref.platform or expanded.short_link:
         raise UnsupportedUrlError(
             f"The short link {ref.original_url} does not point to a single X post"
         )
@@ -549,10 +479,10 @@ def _expand_short_link(
 def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     """Resolve the text path; return True when the GPU queue now owns the job."""
     options = read_task_options(row)
-    source = _source(options)
+    source = link_jobs.source_from_options(options)
     ref = parse_video_url(str(source.get("url") or ""))
     platform = get_video_platform()
-    request = _request(options)
+    request = link_jobs.request_from_options(options)
     # One settings object for the whole job: the configured download proxy and
     # timeout reach metadata, subtitle and audio calls alike.
     download = download_options()
@@ -593,7 +523,7 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
         "Fetching video metadata",
         {"platform": ref.platform, "video_id": ref.video_id, "part": ref.part},
     )
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
     info = platform.fetch_video_info(ref, options=download)
 
     _store_metadata(db, row, options, source, ref=ref, info=info)
@@ -665,61 +595,6 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     return False
 
 
-def record_job_failure(db: Session, job_id: str, exc: BaseException) -> None:
-    """Persist a failed link job: status, error code, diagnostic, log, event.
-
-    Shared with the direct media source (#32) so both link types fail alike.
-    """
-    try:
-        db.rollback()
-        fresh = task_service.get_task_row(db, job_id)
-        if fresh is None or fresh.status == "cancelled":
-            return
-        code = exc.code if isinstance(exc, BeeBoxError) else DEFAULT_VIDEO_FAILURE_CODE
-        message = exc.message if isinstance(exc, BeeBoxError) else str(exc)
-        stage = (exc.stage if isinstance(exc, BeeBoxError) else None) or "video"
-        cancelled = code == "TASK_CANCELLED"
-        fresh.status = "cancelled" if cancelled else "failed"
-        fresh.error = message
-        task_service.set_error_code(fresh, code)
-        fresh.progress = 100
-        fresh.updated_at = datetime.now(UTC)
-        db.commit()
-        diagnostics.record_task_diagnostic(
-            db,
-            task_id=fresh.id,
-            stage=stage,
-            error_code=code,
-            message=message,
-        )
-        task_logs.add_log(db, fresh.id, stage, "error", message, {"error_code": code})
-        event_bus.publish(
-            "task.updated" if cancelled else "task.failed",
-            {
-                "id": fresh.id,
-                "status": fresh.status,
-                "progress": fresh.progress,
-                "error": fresh.error,
-                "error_code": fresh.error_code,
-            },
-        )
-    except Exception:
-        logger.exception("Failed to persist video job failure for %s", job_id)
-
-
-def _hand_off_to_gpu_queue(job_id: str) -> None:
-    """Submit the audio/ASR job as an ordinary transcription (ADR-0009)."""
-    try:
-        task_service.start_task_in_background(job_id)
-    except Exception as exc:
-        logger.exception("Failed to hand video job %s to the GPU queue", job_id)
-        db = db_session.SessionLocal()
-        try:
-            record_job_failure(db, job_id, exc)
-        finally:
-            db.close()
-
-
 def execute_video_job(job_id: str) -> None:
     """Resolve one video job outside the GPU queue.
 
@@ -736,7 +611,7 @@ def execute_video_job(job_id: str) -> None:
         task_runtime.mark_running(job_id)
         handoff = _run_video_job(db, row)
     except Exception as exc:
-        record_job_failure(db, job_id, exc)
+        link_jobs.record_job_failure(db, job_id, exc)
     finally:
         try:
             db.close()
@@ -745,7 +620,7 @@ def execute_video_job(job_id: str) -> None:
             if handoff:
                 # Marking this executor finished first prevents its exit from
                 # clearing the queue bookkeeping the hand-off just created.
-                _hand_off_to_gpu_queue(job_id)
+                link_jobs.hand_off_to_gpu_queue(job_id, label="video")
 
 
 __all__ = [

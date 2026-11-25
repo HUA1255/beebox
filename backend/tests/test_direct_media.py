@@ -766,7 +766,7 @@ def test_a_cancel_after_the_download_deletes_the_downloaded_media(
     from backend.database import session as db_session
     from backend.database.models import TranscriptionTask
     from backend.services import direct_media, task_runtime
-    from backend.services.video_platform import TEXT_PATH_SUBTITLE
+    from backend.services.video_platform import TEXT_PATH_DOWNLOAD
 
     monkeypatch.setenv("BEEBOX_DATA_DIR", str(tmp_path / "data"))
     db_session.init_db()
@@ -794,7 +794,7 @@ def test_a_cancel_after_the_download_deletes_the_downloaded_media(
         "output_formats": ["txt"],
         "diarization": False,
         "_source_kind": "external",
-        "_video_text_path": TEXT_PATH_SUBTITLE,
+        "_video_text_path": TEXT_PATH_DOWNLOAD,
         "_video_request": {},
         "_v1_source": {
             "type": "direct",
