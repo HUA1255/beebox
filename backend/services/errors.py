@@ -22,7 +22,7 @@ ERROR_CODES: dict[str, str] = {
     "TASK_CANCELLED": "The task was cancelled.",
     "INVALID_URL": "The video link is not a valid absolute URL.",
     "UNSUPPORTED_URL": (
-        "The link is not a supported single Bilibili or YouTube video "
+        "The link is not a supported single Bilibili, YouTube or Zhihu video "
         "(other hosts, playlists, collections and live streams are refused)."
     ),
     "VIDEO_NOT_ACCESSIBLE": (

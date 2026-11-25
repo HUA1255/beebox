@@ -909,7 +909,7 @@
                 "type": "null"
               }
             ],
-            "description": "Source platform for type=url (bilibili or youtube); null for file sources and when a direct source names none",
+            "description": "Source platform for type=url (bilibili, youtube or zhihu); null for file sources and when a direct source names none",
             "title": "Platform"
           },
           "subtitle_language": {
@@ -955,7 +955,7 @@
                 "type": "null"
               }
             ],
-            "description": "Original video link for type=url",
+            "description": "Original video link for type=url (Bilibili, YouTube or Zhihu)",
             "title": "Url"
           }
         },
@@ -994,7 +994,7 @@
                 "type": "null"
               }
             ],
-            "description": "Bilibili or YouTube video URL for type=url (ticket #42)",
+            "description": "Bilibili, YouTube or Zhihu video URL for type=url (ticket #42)",
             "title": "Url"
           }
         },

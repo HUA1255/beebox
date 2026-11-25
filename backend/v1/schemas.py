@@ -191,7 +191,9 @@ class JobSourceRequest(BaseModel):
     file_id: str | None = Field(default=None, description="Uploaded file id for type=file")
     url: str | None = Field(
         default=None,
-        description="Bilibili or YouTube video URL for type=url (ticket #42)",
+        description=(
+            "Bilibili, YouTube or Zhihu video URL for type=url (ticket #42)"
+        ),
     )
 
 
@@ -233,14 +235,19 @@ class JobSourceInfo(BaseModel):
     )
     language: str | None = None
     duration_ms: int | None = None
-    url: str | None = Field(default=None, description="Original video link for type=url")
+    url: str | None = Field(
+        default=None,
+        description=(
+            "Original video link for type=url (Bilibili, YouTube or Zhihu)"
+        ),
+    )
     title: str | None = Field(default=None, description="Video title for type=url")
     author: str | None = Field(default=None, description="Video author/uploader for type=url")
     platform: str | None = Field(
         default=None,
         description=(
-            "Source platform for type=url (bilibili or youtube); null for file "
-            "sources and when a direct source names none"
+            "Source platform for type=url (bilibili, youtube or zhihu); null "
+            "for file sources and when a direct source names none"
         ),
     )
     page_url: str | None = Field(
