@@ -4,7 +4,9 @@ Creation decides the text path before any queueing: an unusable link is
 rejected before any job row exists (the caller gets ``INVALID_URL`` or
 ``UNSUPPORTED_URL``), and a supported video job is handed to
 :func:`backend.services.gpu_queue.submit_without_gpu` so its
-metadata resolution never occupies the single GPU slot.
+metadata resolution never occupies the single GPU slot. A short link (ticket
+#29) is also recognized offline; execution expands it before the login gate
+and any platform call, and only an X single post continues.
 
 The executor asks :func:`decide_subtitle` (ticket #43) which path the video
 takes, then runs it:
@@ -52,6 +54,7 @@ from backend.services.paragraphs import assign_paragraphs
 from backend.services.task_options import DEFAULT_OUTPUT_FORMATS, read_task_options
 from backend.services.video_platform import (
     PLATFORM_BILIBILI,
+    PLATFORM_X,
     REASON_PREFER_ASR,
     REASON_SUBTITLE_LANGUAGE_UNAVAILABLE,
     TEXT_PATH_ASR,
@@ -64,9 +67,12 @@ from backend.services.video_platform import (
     TRACK_KIND_MANUAL,
     AudioDownloadError,
     DownloadOptions,
+    InvalidUrlError,
     LoginRequiredError,
     SubtitleCue,
     SubtitleUnavailableError,
+    UnsupportedUrlError,
+    VideoRef,
     clean_auto_captions,
     decide_subtitle,
     download_options,
@@ -74,6 +80,7 @@ from backend.services.video_platform import (
     parse_video_url,
     platform_rule,
 )
+from backend.services.video_platform import short_links
 from backend.utils.events import event_bus
 from backend.utils.transcript_text import transcript_text_from_segments
 
@@ -482,6 +489,56 @@ def _require_bilibili_login(
     )
 
 
+def _expand_short_link(
+    db: Session,
+    row: TranscriptionTask,
+    ref: VideoRef,
+    *,
+    download: DownloadOptions,
+) -> VideoRef:
+    """Resolve a submitted short link to the single X post it points at (#29).
+
+    Submit stays offline, so expansion is the job's first network step and
+    runs before the login gate, metadata fetch and every download. Only an X
+    single post continues; every other target, login page and transport
+    failure is reported with the original short link so the caller can tell
+    which submission failed. Nothing has been downloaded at this point.
+    """
+    task_logs.add_log(
+        db,
+        row.id,
+        "video",
+        "info",
+        "Expanding short link",
+        {"short_link": ref.original_url},
+    )
+    final_url = short_links.expand_short_link(ref.original_url, options=download)
+    if short_links.is_login_page(final_url):
+        raise LoginRequiredError(
+            f"The short link {ref.original_url} led to a login or verification "
+            "page; sign in and retry the job"
+        )
+    try:
+        expanded = parse_video_url(final_url)
+    except (InvalidUrlError, UnsupportedUrlError) as exc:
+        raise UnsupportedUrlError(
+            f"The short link {ref.original_url} does not point to a single X post"
+        ) from exc
+    if expanded.platform != PLATFORM_X or expanded.short_link:
+        raise UnsupportedUrlError(
+            f"The short link {ref.original_url} does not point to a single X post"
+        )
+    task_logs.add_log(
+        db,
+        row.id,
+        "video",
+        "info",
+        "Short link expanded",
+        {"video_id": expanded.video_id},
+    )
+    return expanded
+
+
 def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     """Resolve the text path; return True when the GPU queue now owns the job."""
     options = read_task_options(row)
@@ -492,6 +549,10 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     # One settings object for the whole job: the configured download proxy and
     # timeout reach metadata, subtitle and audio calls alike.
     download = download_options()
+    if ref.short_link:
+        # A short link hides its target: resolve it before anything else, with
+        # the same settings the platform calls will receive (ticket #29).
+        ref = _expand_short_link(db, row, ref, download=download)
     prefer_asr = str(request.get("prefer") or "").strip().lower() == PREFER_ASR
     # Fail before any network call: an unavailable login is a persistent,
     # caller-fixable condition, not something to discover halfway through.
