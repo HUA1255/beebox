@@ -84,7 +84,9 @@ class PlatformRule:
 
     ``reject_query`` names query parameters that turn any link on the platform
     into a list download (a YouTube playlist ``list=``); presence is refused
-    with ``reject_query_message``.
+    with ``reject_query_message``. ``login_paths`` are the page shapes that ask
+    for a sign-in or a verification instead of serving content; a short link
+    that expands to one of them is a login problem, not an unsupported link.
     """
 
     platform: str
@@ -92,6 +94,7 @@ class PlatformRule:
     capabilities: PlatformCapabilities
     reject_query: tuple[str, ...] = ()
     reject_query_message: str | None = None
+    login_paths: tuple[re.Pattern[str], ...] = ()
 
 
 _PLAYLIST_MESSAGE = "Playlist links are not supported; submit a single video"
@@ -110,10 +113,21 @@ _YOUTUBE_LIVE_PATH = re.compile(r"^/live(?:/|$)")
 # except a trailing slash, and the query (tracking parameters) is ignored
 # because it never selects different content.
 _X_POST_PATH = re.compile(r"^/(?P<user>[A-Za-z0-9_]+)/status/(?P<id>[0-9]+)/?$")
-# /i/... holds the site's own pages (login flow, lists, signed-in web
-# status links); none of them is a post to transcribe.
-_X_INTERNAL_PATH = re.compile(r"^/i(?:/|$)")
+# The signed-in permalinks address the same post without the account name:
+# /i/web/status/<id> and /i/status/<id>.
+_X_PERMALINK_PATH = re.compile(r"^/i/(?:web/)?status/(?P<id>[0-9]+)(?:/|$)")
 _X_UNSUPPORTED_MESSAGE = "The X link does not point to a single post"
+# X answers an expired or refused session with a login or verification page
+# instead of the post (ticket #29). Every /i/flow/... page belongs to the
+# sign-in or signup flow, so the whole subtree counts.
+_X_LOGIN_PATHS = (
+    re.compile(r"^/i/flow(?:/|$)"),
+    re.compile(r"^/login(?:/|$)"),
+    re.compile(r"^/account/access(?:/|$)"),
+    re.compile(r"^/account/verify(?:/|$)"),
+    re.compile(r"^/i/verify(?:/|$)"),
+    re.compile(r"^/verify(?:/|$)"),
+)
 
 # A t.co link is exactly one opaque token; its target is only known online.
 _TCO_SHORT_LINK_PATH = re.compile(r"^/(?P<id>[A-Za-z0-9_-]+)/?$")
@@ -231,6 +245,11 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                     host=host,
                     forms=(
                         UrlForm(
+                            # Signed-in permalinks carry only the id.
+                            path=_X_PERMALINK_PATH,
+                            canonical="https://x.com/i/web/status/{id}",
+                        ),
+                        UrlForm(
                             path=_X_POST_PATH,
                             # Normalize both hosts (and their subdomains) to the
                             # x.com post; the submitted query never selects content.
@@ -238,8 +257,6 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                         ),
                     ),
                     unsupported_message=_X_UNSUPPORTED_MESSAGE,
-                    reject_path=_X_INTERNAL_PATH,
-                    reject_path_message="X internal pages are not posts",
                 )
                 for host in ("x.com", "twitter.com")
             ),
@@ -257,6 +274,7 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                 unsupported_message=_TCO_UNSUPPORTED_MESSAGE,
             ),
         ),
+        login_paths=_X_LOGIN_PATHS,
     ),
     PlatformRule(
         platform=PLATFORM_ZHIHU,

@@ -10,11 +10,14 @@ Expansion never saves cookies and never reads a response body: it only follows
 the redirect chain (bounded by :data:`MAX_REDIRECTS`) and returns the final
 address for the job to recognize again. Transport failures become the usual
 retryable download errors.
+
+Which expansion targets are login or verification walls is platform knowledge,
+so it lives in the rule table (:attr:`PlatformRule.login_paths`) and this
+module only applies that rule.
 """
 
 from __future__ import annotations
 
-import re
 from urllib.parse import urlsplit
 
 import requests
@@ -27,32 +30,37 @@ from backend.services.video_platform.errors import (
     DownloadNetworkError,
     DownloadTimeoutError,
 )
+from backend.services.video_platform.platforms import PlatformRule, platform_rule
 
 MAX_REDIRECTS = 10
 _USER_AGENT = "BeeBox/1.0 (short-link expansion)"
 
-# X answers an expired or refused session with a login or verification page
-# instead of the post; the job asks for a sign-in rather than reporting the
-# link as unsupported.
-_LOGIN_HOSTS = ("x.com", "twitter.com")
-_LOGIN_PATHS = (
-    re.compile(r"^/i/flow/(?:login|signup)(?:/|$)"),
-    re.compile(r"^/login(?:/|$)"),
-    re.compile(r"^/account/access(?:/|$)"),
-)
+
+def _host_matches(rule: PlatformRule, host: str) -> bool:
+    return any(
+        host == host_rule.host or host.endswith(f".{host_rule.host}")
+        for host_rule in rule.hosts
+    )
 
 
-def is_login_page(url: str) -> bool:
-    """True when ``url`` is an X login or verification page."""
+def is_login_page(url: str, *, platform: str) -> bool:
+    """True when ``url`` is a login or verification page on ``platform``.
+
+    Only a platform whose rule declares ``login_paths`` can answer yes; every
+    other platform (and every unknown one) has no login wall to detect here.
+    """
+    rule = platform_rule(platform)
+    if rule is None or not rule.login_paths:
+        return False
     try:
         parts = urlsplit(url)
     except ValueError:
         return False
     host = (parts.hostname or "").strip().lower().rstrip(".")
-    if not any(host == item or host.endswith(f".{item}") for item in _LOGIN_HOSTS):
+    if not host or not _host_matches(rule, host):
         return False
     path = parts.path or "/"
-    return any(pattern.match(path) for pattern in _LOGIN_PATHS)
+    return any(pattern.match(path) for pattern in rule.login_paths)
 
 
 def expand_short_link(url: str, *, options: DownloadOptions | None = None) -> str:
