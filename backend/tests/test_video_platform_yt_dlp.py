@@ -405,7 +405,7 @@ def test_yt_dlp_audio_download_receives_the_proxy(
     assert destination.read_bytes() == b"RIFFfake"
     [instance] = ScriptedYoutubeDL.instances
     assert instance.options["proxy"] == "http://127.0.0.1:3128"
-    assert instance.options["format"] == "bestaudio"
+    assert instance.options["format"] == "bestaudio/best"
     assert instance.options["playlist_items"] == "2"
 
 

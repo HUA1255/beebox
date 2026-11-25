@@ -387,11 +387,11 @@ class YtDlpVideoPlatform:
             platform_options.update(
                 {
                     "skip_download": False,
-                    # Ticket #44 downloads audio only: never fetch a video
-                    # stream. When a platform offers no audio-only format the
-                    # download fails loudly instead of silently pulling the
-                    # muxed video stream.
-                    "format": "bestaudio",
+                    # Ticket #44 prefers audio only, but some supported
+                    # platforms publish only muxed files (Zhihu zvideo, ticket
+                    # #30). Prefer an audio-only stream and fall back to the
+                    # best muxed format; FFmpegExtractAudio extracts its audio.
+                    "format": "bestaudio/best",
                     "outtmpl": output_template,
                     # Ticket #85: the base session lists subtitles for
                     # metadata, but the audio temp directory must not collect
