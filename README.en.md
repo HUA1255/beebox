@@ -10,7 +10,7 @@
 Recordings, video files, Bilibili and YouTube links go in. Transcripts with character-level timestamps, speakers, and natural paragraphs come out.<br>
 It runs on a single consumer GPU, and your models and data never leave your machine.
 
-<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.1-blue?style=flat-square" alt="version"> <img src="https://img.shields.io/badge/platform-Windows_11_·_NVIDIA-555?style=flat-square" alt="platform"></p>
+<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.2-blue?style=flat-square" alt="version"> <img src="https://img.shields.io/badge/platform-Windows_11_·_NVIDIA-555?style=flat-square" alt="platform"></p>
 
 <p><a href="README.md">简体中文</a> · <a href="#getting-started">Getting started</a> · <a href="#ai-agent-deployment-guide">AI agent deployment</a> · <a href="docs/history.md">Fix and decision history</a> · <a href="CHANGELOG.md">Changelog</a></p>
 
@@ -147,7 +147,7 @@ $tag = git describe --tags --abbrev=0
 git checkout $tag
 ```
 
-Check: `git status` is clean and `$tag` looks like `v1.0.1`.
+Check: `git status` is clean and `$tag` looks like `v1.0.2`.
 
 **3. Prepare external tools and models**
 

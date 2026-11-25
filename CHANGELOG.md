@@ -4,6 +4,8 @@ All notable BeeBox changes are documented here. The format follows Keep a Change
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-25
+
 ### Added
 
 - 新增 `backend/tests/test_version_consistency.py`：逐个解析版本号所在位置（`pyproject.toml`、`backend/__init__.py`、`uv.lock`、`openapi.json`、后端与 console e2e 的版本断言、README 中英文徽章与 tag 示例、`deploy/windows` 的 tag 示例、`CHANGELOG.md` 的最新版本标题与链接），任何一处与 `pyproject.toml` 不一致都会失败并列出文件名；`console/package-lock.json` 里的依赖版本和 `docs/history.md` 的历史记录明确排除（refs #13）。
@@ -404,7 +406,8 @@ BeeBox 首个上线版本：只提供 `/v1` 接口，以 Windows 原生服务部
 - The macOS package is not signed or notarized.
 - Windows and Linux packages are not published.
 
-[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/HUA1255/beebox/releases/tag/v1.0.2
 [1.0.1]: https://github.com/HUA1255/beebox/releases/tag/v1.0.1
 [1.0.0]: https://github.com/HUA1255/beebox/releases/tag/v1.0.0
 [0.4.0]: https://github.com/Goldloli/asrbox/compare/v0.3.3...v0.4.0
