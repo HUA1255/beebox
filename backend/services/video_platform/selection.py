@@ -44,6 +44,9 @@ from backend.services.video_platform.subtitles import SUPPORTED_SUBTITLE_FORMATS
 
 TEXT_PATH_SUBTITLE = "subtitle"
 TEXT_PATH_ASR = "asr"
+# A direct media job downloads its own file before it has any text path; the
+# value only has to differ from ``asr`` so the job stays outside the GPU queue.
+TEXT_PATH_DOWNLOAD = "download"
 
 REASON_PREFER_ASR = "prefer_asr"
 REASON_NO_USABLE_SUBTITLE = "no_usable_subtitle"
@@ -359,6 +362,7 @@ __all__ = [
     "REASON_PREFER_ASR",
     "REASON_SUBTITLE_LANGUAGE_UNAVAILABLE",
     "TEXT_PATH_ASR",
+    "TEXT_PATH_DOWNLOAD",
     "TEXT_PATH_SUBTITLE",
     "SubtitleDecision",
     "canonical_language",

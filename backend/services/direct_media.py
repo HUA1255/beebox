@@ -21,13 +21,15 @@ Two module-level seams keep every test offline:
 ``get_http_transport()``
     Returns the object that performs one HTTP GET. Production uses
     :class:`RequestsHttpTransport`; tests replace it.
+
+The job lifecycle around that download (option plumbing, the post-download
+hand-off and the failure record) is shared with media links through
+:mod:`backend.services.link_jobs`.
 """
 
 from __future__ import annotations
 
 import ipaddress
-import json
-import logging
 import socket
 import uuid
 from collections.abc import Callable, Iterator, Mapping
@@ -41,17 +43,18 @@ from sqlalchemy.orm import Session
 from backend import config
 from backend.database import session as db_session
 from backend.database.models import TranscriptionTask
+from backend.services import ffmpeg_tools
+from backend.services import link_jobs
 from backend.services import task_logs
 from backend.services import task_runtime
 from backend.services import tasks as task_service
 from backend.services import uploads
-from backend.services import video_jobs
 from backend.services.errors import BeeBoxError
 from backend.services.media import probe_media
-from backend.services.task_options import DEFAULT_OUTPUT_FORMATS, read_task_options
+from backend.services.task_options import read_task_options
 from backend.services.video_platform import (
     TEXT_PATH_ASR,
-    TEXT_PATH_SUBTITLE,
+    TEXT_PATH_DOWNLOAD,
     TEXT_SOURCE_ASR,
 )
 from backend.services.video_platform.config import download_options
@@ -60,8 +63,6 @@ from backend.services.video_platform.errors import (
     DownloadTimeoutError,
     InvalidUrlError,
 )
-
-logger = logging.getLogger(__name__)
 
 DIRECT_SOURCE_TYPE = "direct"
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
@@ -113,8 +114,6 @@ class DirectSourceError(BeeBoxError):
 
 class DirectUrlNotAllowedError(DirectSourceError):
     """A hop resolves to a non-public address or the redirect chain is invalid."""
-
-    code = "DIRECT_URL_NOT_ALLOWED"
 
 
 class DirectMediaFormatError(DirectSourceError):
@@ -264,12 +263,19 @@ def _is_explicit_non_media(content_type: str | None) -> bool:
 
 def _require_audio_stream(path: Path) -> None:
     """A response without a media content type must prove it carries audio."""
+    ffprobe = ffmpeg_tools.resolve_tools(check_version=False)["ffprobe"]
+    if not ffprobe.available or not ffprobe.path:
+        # A missing local tool is an environment problem, not a rejection of
+        # the link: raise the same typed error the probe would, before the
+        # media verdict is formed.
+        raise BeeBoxError(
+            "FFPROBE_FAILED",
+            f"ffprobe is required to inspect media files: {ffprobe.error or 'not found'}",
+            stage="preprocessing",
+        )
     try:
         metadata = probe_media(path)
     except BeeBoxError as exc:
-        if exc.code == "FFPROBE_FAILED" and "is required" in exc.message:
-            # A missing local tool is an environment problem, not a rejection.
-            raise
         raise DirectMediaFormatError(
             "The direct link did not return decodable audio or video"
         ) from exc
@@ -505,20 +511,6 @@ def download_direct_media(
 # ---------------------------------------------------------------------------
 
 
-def _write_options(row: TranscriptionTask, options: dict[str, Any]) -> None:
-    row.options_json = json.dumps(options, ensure_ascii=False)
-
-
-def _source(options: dict[str, Any]) -> dict[str, Any]:
-    value = options.get("_v1_source")
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _request(options: dict[str, Any]) -> dict[str, Any]:
-    value = options.get("_video_request")
-    return dict(value) if isinstance(value, dict) else {}
-
-
 def _display_name(url: str, title: str | None) -> str:
     """A caller-friendly filename: the given title, else the media file name."""
     if isinstance(title, str) and title.strip():
@@ -536,24 +528,9 @@ def runs_outside_gpu_queue(row: TranscriptionTask) -> bool:
     """
     options = read_task_options(row)
     return (
-        _source(options).get("type") == DIRECT_SOURCE_TYPE
+        link_jobs.source_from_options(options).get("type") == DIRECT_SOURCE_TYPE
         and options.get("_video_text_path") != TEXT_PATH_ASR
     )
-
-
-def _base_options(
-    source: dict[str, Any], request: dict[str, Any]
-) -> dict[str, Any]:
-    return {
-        "output_formats": list(DEFAULT_OUTPUT_FORMATS),
-        # No audio to diarize until the download hands off; replaced then.
-        "diarization": False,
-        # Until the download stores one, delete/retention must not unlink a path.
-        "_source_kind": "external",
-        "_video_text_path": TEXT_PATH_SUBTITLE,
-        "_video_request": request,
-        "_v1_source": source,
-    }
 
 
 def create_direct_job(
@@ -574,7 +551,7 @@ def create_direct_job(
     """
     value = (url or "").strip()
     parse_direct_url(value)
-    request = video_jobs.requested_asr_options(options)
+    request = link_jobs.requested_asr_options(options)
     filename = _display_name(value, title)
     source = {
         "type": DIRECT_SOURCE_TYPE,
@@ -594,9 +571,9 @@ def create_direct_job(
         audio_path="",
         status="queued",
         progress=0,
-        options_json=json.dumps(
-            _base_options(source, request), ensure_ascii=False
-        ),
+    )
+    link_jobs.write_options(
+        row, link_jobs.base_options(source, request, text_path=TEXT_PATH_DOWNLOAD)
     )
     db.add(row)
     db.commit()
@@ -605,26 +582,15 @@ def create_direct_job(
     return row
 
 
-def _is_cancelled(row: TranscriptionTask) -> bool:
-    return row.status == "cancelled" or task_runtime.is_cancelled(row.id)
-
-
-def _check_cancelled(row: TranscriptionTask) -> None:
-    # Same semantics as the video-link executor: a cancel between steps must
-    # stop the download instead of handing cancelled work to the GPU queue.
-    if _is_cancelled(row):
-        raise BeeBoxError("TASK_CANCELLED", "Task was cancelled", stage="cancel")
-
-
 def _run_direct_job(db: Session, row: TranscriptionTask) -> bool:
     """Download and validate the media, then report that the GPU queue owns it."""
     options = read_task_options(row)
-    source = _source(options)
-    request = _request(options)
+    source = link_jobs.source_from_options(options)
+    request = link_jobs.request_from_options(options)
     url = str(source.get("url") or "")
     _, host, _ = parse_direct_url(url)
     # Resolve the model before spending a download on a job that cannot run.
-    model_name = video_jobs.resolve_asr_model_name(db, request)
+    model_name = link_jobs.resolve_asr_model_name(db, request)
     task_logs.add_log(
         db,
         row.id,
@@ -634,15 +600,15 @@ def _run_direct_job(db: Session, row: TranscriptionTask) -> bool:
         {"host": host},
     )
     task_service.set_task_state(db, row, "preprocessing", 10)
-    _check_cancelled(row)
+    link_jobs.check_cancelled(row)
 
     destination = config.get_uploads_dir() / row.id
     stored: Path | None = None
     try:
         stored = download_direct_media(
-            url, destination, is_cancelled=lambda: _is_cancelled(row)
+            url, destination, is_cancelled=lambda: link_jobs.is_cancelled(row)
         )
-        _check_cancelled(row)
+        link_jobs.check_cancelled(row)
     except BaseException:
         # A failed or cancelled download leaves no temporary media behind.
         destination.unlink(missing_ok=True)
@@ -650,49 +616,20 @@ def _run_direct_job(db: Session, row: TranscriptionTask) -> bool:
             stored.unlink(missing_ok=True)
         raise
 
-    options.update(
-        {
-            "_source_kind": video_jobs.SOURCE_KIND_DOWNLOAD,
-            "_video_text_path": TEXT_PATH_ASR,
-            "diarization": bool(request.get("diarization", True)),
-        }
-    )
-    if request.get("num_speakers") is not None:
-        options["num_speakers"] = request["num_speakers"]
-    source.update({"text_source": TEXT_SOURCE_ASR, "subtitle_language": None})
-    options["_v1_source"] = source
-    _write_options(row, options)
-    row.audio_path = config.to_storage_path(stored)
-    row.source = "local"
-    row.model_name = model_name
-    if request.get("language") is not None:
-        row.language = request["language"]
-    db.commit()
-    task_logs.add_log(
-        db,
-        row.id,
-        "download",
-        "info",
-        "Direct media download completed; queued for transcription",
-        {"model": row.model_name, "bytes": stored.stat().st_size},
-    )
     # The job re-enters through the normal seam: the GPU queue now owns
     # ordering, pausing and the one-at-a-time rule.
-    task_service.set_task_state(db, row, "queued", 0)
+    link_jobs.store_downloaded_audio(
+        db,
+        row,
+        options,
+        source,
+        audio_path=stored,
+        model_name=model_name,
+        request=request,
+        log_stage="download",
+        log_message="Direct media download completed; queued for transcription",
+    )
     return True
-
-
-def _hand_off_to_gpu_queue(job_id: str) -> None:
-    """Submit the downloaded job as an ordinary transcription (ADR-0009)."""
-    try:
-        task_service.start_task_in_background(job_id)
-    except Exception as exc:
-        logger.exception("Failed to hand direct job %s to the GPU queue", job_id)
-        db = db_session.SessionLocal()
-        try:
-            video_jobs.record_job_failure(db, job_id, exc)
-        finally:
-            db.close()
 
 
 def execute_direct_job(job_id: str) -> None:
@@ -711,7 +648,7 @@ def execute_direct_job(job_id: str) -> None:
         task_runtime.mark_running(job_id)
         handoff = _run_direct_job(db, row)
     except Exception as exc:
-        video_jobs.record_job_failure(db, job_id, exc)
+        link_jobs.record_job_failure(db, job_id, exc)
     finally:
         try:
             db.close()
@@ -720,7 +657,7 @@ def execute_direct_job(job_id: str) -> None:
             if handoff:
                 # Marking this executor finished first prevents its exit from
                 # clearing the queue bookkeeping the hand-off just created.
-                _hand_off_to_gpu_queue(job_id)
+                link_jobs.hand_off_to_gpu_queue(job_id, label="direct")
 
 
 __all__ = [

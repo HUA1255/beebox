@@ -1,6 +1,6 @@
 """The video platform boundary (ticket #42).
 
-Everything that talks to a supported video platform (Bilibili, YouTube or
+Everything that talks to a supported video platform (Bilibili, YouTube, X or
 Zhihu) goes through this package:
 recognizing a link, fetching video metadata and the subtitle track list,
 downloading one subtitle track, downloading only the audio stream (ticket
@@ -92,6 +92,7 @@ from backend.services.video_platform.selection import (
     REASON_PREFER_ASR,
     REASON_SUBTITLE_LANGUAGE_UNAVAILABLE,
     TEXT_PATH_ASR,
+    TEXT_PATH_DOWNLOAD,
     TEXT_PATH_SUBTITLE,
     SubtitleDecision,
     decide_subtitle,
@@ -197,6 +198,7 @@ __all__ = [
     "SUPPORTED_PLATFORMS",
     "SUPPORTED_SUBTITLE_FORMATS",
     "TEXT_PATH_ASR",
+    "TEXT_PATH_DOWNLOAD",
     "TEXT_PATH_SUBTITLE",
     "TEXT_SOURCE_ASR",
     "TEXT_SOURCE_AUTO",
