@@ -302,6 +302,137 @@ def test_a_non_http_link_is_rejected_at_download_time(
     assert transport.requests == []
 
 
+@pytest.mark.parametrize("url", ["http://[::1", "https://[bad/", "http://[]/x"])
+def test_a_malformed_url_is_rejected_without_a_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    transport = FakeHttpTransport()
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path, url)
+
+    assert getattr(excinfo.value, "code", None) == "INVALID_URL"
+    assert transport.requests == []
+
+
+class _ExplodingResponse:
+    """A streamed requests.Response whose body raises mid-transfer."""
+
+    status_code = 200
+    headers = {"Content-Type": "audio/wav"}
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+        self.closed = False
+
+    def iter_content(self, chunk_size: int):
+        yield b"partial-body"
+        raise self._error
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_a_read_timeout_from_the_requests_body_becomes_an_http_timeout() -> None:
+    import requests
+
+    from backend.services import direct_media
+
+    adapter = direct_media._RequestsResponse(
+        _ExplodingResponse(requests.Timeout("read timed out"))
+    )
+
+    with pytest.raises(direct_media.HttpTimeout):
+        list(adapter.iter_bytes())
+
+
+def test_a_connection_reset_from_the_requests_body_becomes_a_transport_error() -> None:
+    import requests
+
+    from backend.services import direct_media
+
+    adapter = direct_media._RequestsResponse(
+        _ExplodingResponse(requests.ConnectionError("connection reset"))
+    )
+
+    with pytest.raises(direct_media.HttpTransportError):
+        list(adapter.iter_bytes())
+
+
+class _BodyErrorResponse(FakeHttpResponse):
+    """A scripted response that fails after the first body chunk."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__(headers={"Content-Type": "audio/wav"})
+        self.error = error
+
+    def iter_bytes(self):
+        yield b"partial-body"
+        raise self.error
+
+
+def test_a_timeout_while_streaming_the_body_is_a_download_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+
+    response = _BodyErrorResponse(direct_media.HttpTimeout("scripted"))
+    install_seams(monkeypatch, transport=FakeHttpTransport(response))
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DOWNLOAD_TIMEOUT"
+    assert response.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_reset_while_streaming_the_body_is_a_download_network_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+
+    response = _BodyErrorResponse(direct_media.HttpTransportError("scripted"))
+    install_seams(monkeypatch, transport=FakeHttpTransport(response))
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DOWNLOAD_NETWORK_ERROR"
+    assert response.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_cancel_during_the_body_stops_the_download_and_deletes_the_partial_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+
+    state = {"cancelled": False}
+
+    class _CancellingBody(FakeHttpResponse):
+        def iter_bytes(self):
+            yield b"x" * 64
+            state["cancelled"] = True
+            yield b"x" * 64
+
+    install_seams(
+        monkeypatch,
+        transport=FakeHttpTransport(
+            _CancellingBody(headers={"Content-Type": "audio/wav"})
+        ),
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        direct_media.download_direct_media(
+            MEDIA_URL, tmp_path / "job", is_cancelled=lambda: state["cancelled"]
+        )
+
+    assert getattr(excinfo.value, "code", None) == "TASK_CANCELLED"
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_failure_messages_never_echo_the_signed_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -350,8 +481,8 @@ def test_a_cancel_after_the_download_deletes_the_downloaded_media(
     state = {"cancelled": False}
     real_download = direct_media.download_direct_media
 
-    def download_then_cancel(url: str, destination: Path) -> Path:
-        path = real_download(url, destination)
+    def download_then_cancel(url: str, destination: Path, **kwargs) -> Path:
+        path = real_download(url, destination, **kwargs)
         # The cancel lands between the download and the hand-off.
         state["cancelled"] = True
         return path

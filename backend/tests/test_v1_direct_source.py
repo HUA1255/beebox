@@ -236,6 +236,9 @@ def test_a_missing_or_blank_url_is_invalid_source(
         "file:///tmp/clip.wav",
         "not a url",
         "https://",
+        # urlsplit() itself raises ValueError for these.
+        "http://[::1",
+        "https://[bad/",
     ],
 )
 def test_a_non_http_link_is_rejected_with_invalid_url_and_no_row(

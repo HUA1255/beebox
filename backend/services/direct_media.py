@@ -28,7 +28,7 @@ import json
 import logging
 import socket
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -159,7 +159,15 @@ class _RequestsResponse:
         self.headers = response.headers
 
     def iter_bytes(self) -> Iterator[bytes]:
-        yield from self._response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE)
+        # A read timeout or a connection reset can surface *after* the status
+        # line was received; translate it here so a mid-body failure keeps the
+        # same public classification as a failure before the response.
+        try:
+            yield from self._response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE)
+        except requests.Timeout as exc:
+            raise HttpTimeout("The direct media download timed out") from exc
+        except requests.RequestException as exc:
+            raise HttpTransportError("The direct media download failed") from exc
 
     def close(self) -> None:
         self._response.close()
@@ -273,7 +281,15 @@ def parse_direct_url(url: str) -> tuple[str, str, int]:
     Raises :class:`InvalidUrlError` (``INVALID_URL``) for everything else; the
     caller answers 400 without writing a job row. No name is resolved here.
     """
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        # urlsplit() rejects malformed IPv6 brackets itself; that is still a
+        # caller mistake, not a server failure.
+        raise InvalidUrlError(
+            "The direct media link is not an absolute http(s) URL",
+            stage="download",
+        ) from exc
     scheme = (parts.scheme or "").lower()
     host = (parts.hostname or "").strip()
     if scheme not in _PORTS or not host:
@@ -313,8 +329,17 @@ def _ensure_public_addresses(host: str, port: int) -> None:
             )
 
 
-def download_direct_media(url: str, destination: Path) -> Path:
-    """Download and validate one direct media link; return the stored path."""
+def download_direct_media(
+    url: str,
+    destination: Path,
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> Path:
+    """Download and validate one direct media link; return the stored path.
+
+    ``is_cancelled`` is polled once per streamed chunk so a cancel stops a
+    large transfer instead of waiting for the whole body.
+    """
     _, host, port = parse_direct_url(url)
     limit = uploads.max_upload_bytes()
     try:
@@ -364,6 +389,10 @@ def download_direct_media(url: str, destination: Path) -> Path:
         written = 0
         with destination.open("wb") as output:
             for chunk in response.iter_bytes():
+                if is_cancelled is not None and is_cancelled():
+                    raise BeeBoxError(
+                        "TASK_CANCELLED", "Task was cancelled", stage="cancel"
+                    )
                 written += len(chunk)
                 if written > limit:
                     raise DirectFileTooLargeError(
@@ -372,6 +401,18 @@ def download_direct_media(url: str, destination: Path) -> Path:
                 output.write(chunk)
         if not _is_media_type(content_type):
             _require_audio_stream(destination)
+    except HttpTimeout as exc:
+        # A read timeout or reset can arrive mid-body; keep the same
+        # classification as a failure before the response.
+        destination.unlink(missing_ok=True)
+        raise DownloadTimeoutError(
+            "The direct media download timed out", stage="download"
+        ) from exc
+    except HttpTransportError as exc:
+        destination.unlink(missing_ok=True)
+        raise DownloadNetworkError(
+            "The direct media download failed for a network reason", stage="download"
+        ) from exc
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
@@ -487,10 +528,14 @@ def create_direct_job(
     return row
 
 
+def _is_cancelled(row: TranscriptionTask) -> bool:
+    return row.status == "cancelled" or task_runtime.is_cancelled(row.id)
+
+
 def _check_cancelled(row: TranscriptionTask) -> None:
     # Same semantics as the video-link executor: a cancel between steps must
     # stop the download instead of handing cancelled work to the GPU queue.
-    if row.status == "cancelled" or task_runtime.is_cancelled(row.id):
+    if _is_cancelled(row):
         raise BeeBoxError("TASK_CANCELLED", "Task was cancelled", stage="cancel")
 
 
@@ -517,7 +562,9 @@ def _run_direct_job(db: Session, row: TranscriptionTask) -> bool:
     destination = config.get_uploads_dir() / row.id
     stored: Path | None = None
     try:
-        stored = download_direct_media(url, destination)
+        stored = download_direct_media(
+            url, destination, is_cancelled=lambda: _is_cancelled(row)
+        )
         _check_cancelled(row)
     except BaseException:
         # A failed or cancelled download leaves no temporary media behind.
