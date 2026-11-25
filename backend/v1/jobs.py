@@ -25,6 +25,7 @@ from backend.services import media_retention
 from backend.services import models as model_service
 from backend.services import settings as settings_service
 from backend.services import speakers as speaker_service
+from backend.services import task_runtime
 from backend.services import tasks as task_service
 from backend.services.task_options import (
     DEFAULT_OUTPUT_FORMATS,
@@ -202,6 +203,10 @@ def retry_job(job_id: str, db: Session = Depends(get_db)) -> JobResponse:
             "JOB_NOT_RETRYABLE",
             "retry",
         )
+    # The terminal row is written before the executor releases its runtime
+    # marker. Wait briefly so a retry issued right after the failure is not
+    # refused by a stale active marker; a genuinely stuck job still 409s.
+    task_runtime.wait_finished(job_id, timeout=2.0)
     chunk_query = db.query(TranscriptionChunk.id).filter(TranscriptionChunk.task_id == job_id)
     has_chunks = chunk_query.first() is not None
     unfinished = chunk_query.filter(TranscriptionChunk.status != "completed").first() is not None
