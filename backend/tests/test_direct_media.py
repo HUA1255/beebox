@@ -17,21 +17,28 @@ from support import FakeHttpResponse, FakeHttpTransport, make_wav_bytes
 
 GLOBAL_ADDRESS = "93.184.216.34"
 MEDIA_URL = "https://media.example/clip.wav?signature=sentinel-value"
+REDIRECT_URL = "https://cdn.example/files/clip.wav?token=another-sentinel"
 
 
 def install_seams(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    addresses: tuple[str, ...] = (GLOBAL_ADDRESS,),
+    addresses: tuple[str, ...] | dict[str, tuple[str, ...]] = (GLOBAL_ADDRESS,),
     transport: FakeHttpTransport | None = None,
 ) -> tuple[list[tuple[str, int]], FakeHttpTransport]:
-    """Replace the resolver and transport; return what the job saw."""
+    """Replace the resolver and transport; return what the job saw.
+
+    ``addresses`` is either one answer for every host or a mapping from host to
+    answers, so a redirect hop can resolve differently from the submitted host.
+    """
     from backend.services import direct_media
 
     resolved: list[tuple[str, int]] = []
 
     def resolve(host: str, port: int) -> tuple[str, ...]:
         resolved.append((host, port))
+        if isinstance(addresses, dict):
+            return addresses[host]
         return addresses
 
     fake = transport or FakeHttpTransport()
@@ -98,13 +105,196 @@ def test_any_non_public_resolved_address_is_refused_before_the_request(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_a_redirect_is_refused_without_requesting_the_target(
+def test_a_redirect_to_a_public_media_file_is_followed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = make_wav_bytes()
+    transport = FakeHttpTransport(
+        FakeHttpResponse(302, headers={"Location": REDIRECT_URL}),
+        FakeHttpResponse(headers={"Content-Type": "audio/wav"}, chunks=(body,)),
+    )
+    resolved, _ = install_seams(
+        monkeypatch,
+        addresses={
+            "media.example": (GLOBAL_ADDRESS,),
+            "cdn.example": (GLOBAL_ADDRESS,),
+        },
+        transport=transport,
+    )
+
+    path = download(tmp_path)
+
+    assert path == tmp_path / "job.wav"
+    assert path.read_bytes() == body
+    # Every hop was requested once, in order, with the same deadline.
+    assert [request["url"] for request in transport.requests] == [
+        MEDIA_URL,
+        REDIRECT_URL,
+    ]
+    assert {request["timeout"] for request in transport.requests} == {30}
+    assert resolved == [("media.example", 443), ("cdn.example", 443)]
+    # The redirect response was closed before the target was fetched.
+    assert all(response.closed for response in transport.served)
+
+
+def test_a_relative_location_is_resolved_against_the_current_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = make_wav_bytes()
+    transport = FakeHttpTransport(
+        FakeHttpResponse(302, headers={"Location": "/files/clip.wav"}),
+        FakeHttpResponse(headers={"Content-Type": "audio/wav"}, chunks=(body,)),
+    )
+    install_seams(monkeypatch, transport=transport)
+
+    path = download(tmp_path)
+
+    assert path.read_bytes() == body
+    assert [request["url"] for request in transport.requests] == [
+        MEDIA_URL,
+        "https://media.example/files/clip.wav",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("location", "target_host", "target_address", "target_port"),
+    [
+        ("http://localhost/clip.wav", "localhost", "127.0.0.1", 80),
+        ("http://internal.example/clip.wav", "internal.example", "10.1.2.3", 80),
+        ("https://lan.example/clip.wav", "lan.example", "192.168.1.10", 443),
+        ("http://link-local.example/clip.wav", "link-local.example", "169.254.1.1", 80),
+        ("https://reserved.example/clip.wav", "reserved.example", "192.0.2.10", 443),
+    ],
+)
+def test_a_redirect_to_a_non_public_target_is_refused_without_requesting_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str,
+    target_host: str,
+    target_address: str,
+    target_port: int,
+) -> None:
+    redirect = FakeHttpResponse(302, headers={"Location": location})
+    transport = FakeHttpTransport(redirect)
+    resolved, _ = install_seams(
+        monkeypatch,
+        addresses={
+            "media.example": (GLOBAL_ADDRESS,),
+            target_host: (target_address,),
+        },
+        transport=transport,
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    # The hop was resolved and rejected; its target was never requested.
+    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
+    assert resolved == [("media.example", 443), (target_host, target_port)]
+    assert redirect.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_redirect_hop_with_public_and_private_addresses_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One public answer is not enough on a hop either: the whole host is
+    # poisoned and the target is never requested.
+    transport = FakeHttpTransport(
+        FakeHttpResponse(
+            302, headers={"Location": "https://mixed.example/clip.wav"}
+        )
+    )
+    resolved, _ = install_seams(
+        monkeypatch,
+        addresses={
+            "media.example": (GLOBAL_ADDRESS,),
+            "mixed.example": (GLOBAL_ADDRESS, "10.1.2.3"),
+        },
+        transport=transport,
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
+    assert ("mixed.example", 443) in resolved
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_hop_limit_fails_fast_without_requesting_the_next_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+    from backend.v1.status import NON_RETRYABLE_ERROR_CODES
+
+    urls = [MEDIA_URL]
+    responses = []
+    for hop in range(direct_media.MAX_REDIRECTS + 1):
+        target = f"https://hop{hop}.example/clip.wav"
+        urls.append(target)
+        responses.append(FakeHttpResponse(302, headers={"Location": target}))
+    transport = FakeHttpTransport(*responses)
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    assert getattr(excinfo.value, "code", None) in NON_RETRYABLE_ERROR_CODES
+    assert "redirect" in str(excinfo.value).lower()
+    assert str(direct_media.MAX_REDIRECTS) in str(excinfo.value)
+    # MAX_REDIRECTS hops were followed; the last Location was never requested.
+    assert [request["url"] for request in transport.requests] == urls[:-1]
+    assert all(response.closed for response in transport.served)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_redirect_loop_fails_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.v1.status import NON_RETRYABLE_ERROR_CODES
+
+    first = "https://first.example/clip.wav"
+    second = "https://second.example/clip.wav"
+    transport = FakeHttpTransport(
+        FakeHttpResponse(302, headers={"Location": first}),
+        FakeHttpResponse(302, headers={"Location": second}),
+        FakeHttpResponse(302, headers={"Location": first}),
+    )
+    install_seams(
+        monkeypatch,
+        addresses={
+            "media.example": (GLOBAL_ADDRESS,),
+            "first.example": (GLOBAL_ADDRESS,),
+            "second.example": (GLOBAL_ADDRESS,),
+        },
+        transport=transport,
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    assert getattr(excinfo.value, "code", None) in NON_RETRYABLE_ERROR_CODES
+    assert "loop" in str(excinfo.value).lower()
+    # Detection happens on the repeated target, before a fourth request.
+    assert [request["url"] for request in transport.requests] == [
+        MEDIA_URL,
+        first,
+        second,
+    ]
+    assert all(response.closed for response in transport.served)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_redirect_to_the_same_url_is_a_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     transport = FakeHttpTransport(
-        FakeHttpResponse(
-            302, headers={"Location": "https://elsewhere.example/payload"}
-        )
+        FakeHttpResponse(302, headers={"Location": MEDIA_URL})
     )
     install_seams(monkeypatch, transport=transport)
 
@@ -112,12 +302,118 @@ def test_a_redirect_is_refused_without_requesting_the_target(
         download(tmp_path)
 
     assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
-    assert "redirect" in str(excinfo.value).lower()
-    assert "302" in str(excinfo.value)
-    # Only the original URL was requested; the Location target was not.
+    assert "loop" in str(excinfo.value).lower()
     assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
     assert list(tmp_path.iterdir()) == []
-    assert transport.served[0].closed
+
+
+@pytest.mark.parametrize("headers", [{}, {"Location": ""}, {"Location": "   "}])
+def test_a_redirect_without_a_location_is_an_invalid_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, headers: dict[str, str]
+) -> None:
+    redirect = FakeHttpResponse(302, headers=headers)
+    transport = FakeHttpTransport(redirect)
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    assert "location" in str(excinfo.value).lower()
+    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
+    assert redirect.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "location",
+    ["ftp://files.example/clip.wav", "file:///etc/passwd", "data:text/plain,hello"],
+)
+def test_a_redirect_to_a_non_http_location_is_an_invalid_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, location: str
+) -> None:
+    redirect = FakeHttpResponse(302, headers={"Location": location})
+    transport = FakeHttpTransport(redirect)
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "DIRECT_URL_NOT_ALLOWED"
+    assert "absolute http(s) url" in str(excinfo.value).lower()
+    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
+    assert redirect.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_final_redirect_response_is_still_media_validated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = FakeHttpResponse(
+        headers={"Content-Type": "text/html"}, chunks=(b"<html>not media</html>",)
+    )
+    transport = FakeHttpTransport(
+        FakeHttpResponse(302, headers={"Location": REDIRECT_URL}), page
+    )
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "UNSUPPORTED_MEDIA_FORMAT"
+    # The rejection happens on the final headers: no body byte was read.
+    assert page.bytes_read == 0
+    assert page.closed
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_redirected_generic_response_without_audio_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport = FakeHttpTransport(
+        FakeHttpResponse(302, headers={"Location": REDIRECT_URL}),
+        FakeHttpResponse(
+            headers={"Content-Type": "application/octet-stream"},
+            chunks=(b"<html>not media at all</html>",),
+        ),
+    )
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        download(tmp_path)
+
+    assert getattr(excinfo.value, "code", None) == "UNSUPPORTED_MEDIA_FORMAT"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_cancel_between_hops_stops_before_the_next_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+
+    state = {"cancelled": False}
+
+    class _CancelOnClose(FakeHttpResponse):
+        def close(self) -> None:
+            super().close()
+            state["cancelled"] = True
+
+    transport = FakeHttpTransport(
+        _CancelOnClose(302, headers={"Location": REDIRECT_URL}),
+        FakeHttpResponse(
+            headers={"Content-Type": "audio/wav"}, chunks=(make_wav_bytes(),)
+        ),
+    )
+    install_seams(monkeypatch, transport=transport)
+
+    with pytest.raises(Exception) as excinfo:
+        direct_media.download_direct_media(
+            MEDIA_URL, tmp_path / "job", is_cancelled=lambda: state["cancelled"]
+        )
+
+    assert getattr(excinfo.value, "code", None) == "TASK_CANCELLED"
+    assert [request["url"] for request in transport.requests] == [MEDIA_URL]
+    assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.parametrize("status", [400, 403, 404, 410, 500, 503])
@@ -437,15 +733,16 @@ def test_failure_messages_never_echo_the_signed_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     failures = [
-        FakeHttpResponse(302, headers={"Location": "https://elsewhere.example/x"}),
+        # An invalid redirect chain (a 3xx without a Location header).
+        FakeHttpResponse(302),
         FakeHttpResponse(403),
         FakeHttpResponse(headers={"Content-Type": "text/html"}, chunks=(b"x",)),
         FakeHttpResponse(headers={"Content-Length": "999999999999"}),
     ]
-    for response in failures:
+    for index, response in enumerate(failures):
         install_seams(monkeypatch, transport=FakeHttpTransport(response))
         with pytest.raises(Exception) as excinfo:
-            download(tmp_path / response.status_code.__str__())
+            download(tmp_path / str(index))
         message = str(excinfo.value)
         assert MEDIA_URL not in message
         assert "sentinel-value" not in message

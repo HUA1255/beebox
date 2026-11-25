@@ -256,8 +256,11 @@ def test_a_non_http_link_is_rejected_with_invalid_url_and_no_row(
 
 
 # ---------------------------------------------------------------------------
-# The security baseline: public addresses only, no redirects
+# The security baseline: public addresses only, every redirect hop validated
 # ---------------------------------------------------------------------------
+
+
+REDIRECT_URL = "https://cdn.example/files/clip.wav?token=another-sentinel"
 
 
 @pytest.mark.parametrize(
@@ -317,13 +320,76 @@ def test_a_literal_loopback_host_is_refused_by_the_real_resolver(
     assert transport.requests == []
 
 
-def test_a_redirect_is_refused_and_the_target_is_never_requested(
+def test_a_redirect_to_a_public_media_file_completes_and_keeps_the_submitted_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = configure_client(tmp_path, monkeypatch)
     transport, _ = install_transport(
         monkeypatch,
-        FakeHttpResponse(302, headers={"Location": "https://elsewhere.example/payload"}),
+        FakeHttpResponse(302, headers={"Location": REDIRECT_URL}),
+        wav_response(),
+    )
+
+    created = create_direct_job(client)
+    assert created.status_code == 201, created.text
+    job_id = created.json()["id"]
+    finished = wait_for(client, job_id)
+
+    assert finished["status"] == "succeeded", finished
+    # The caller's submitted link is the retry input, not the CDN target.
+    assert finished["source"]["url"] == MEDIA_URL
+    assert [request["url"] for request in transport.requests] == [
+        MEDIA_URL,
+        REDIRECT_URL,
+    ]
+    wait_for_media_cleanup(tmp_path / "uploads", job_id)
+
+
+def test_a_redirect_to_a_non_public_target_is_refused_and_never_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.services import direct_media
+
+    client = configure_client(tmp_path, monkeypatch)
+    transport = FakeHttpTransport(
+        FakeHttpResponse(
+            302, headers={"Location": "http://localhost:8080/clip.wav"}
+        )
+    )
+    resolved: list[tuple[str, int]] = []
+
+    def resolve(host: str, port: int) -> tuple[str, ...]:
+        resolved.append((host, port))
+        return ("127.0.0.1",) if host == "localhost" else (GLOBAL_ADDRESS,)
+
+    monkeypatch.setattr(direct_media, "get_http_transport", lambda: transport)
+    monkeypatch.setattr(direct_media, "resolve_host", resolve)
+
+    created = create_direct_job(client)
+    assert created.status_code == 201, created.text
+    job_id = created.json()["id"]
+    finished = wait_for(client, job_id)
+
+    assert finished["status"] == "failed", finished
+    assert finished["error_code"] == "DIRECT_URL_NOT_ALLOWED", finished
+    assert finished["retryable"] is False, finished
+    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
+    assert resolved == [("media.example", 443), ("localhost", 8080)]
+    assert MEDIA_URL not in finished["error"]
+    assert uploads_for(tmp_path / "uploads", job_id) == []
+
+
+def test_a_redirect_loop_is_non_retryable_and_makes_no_extra_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = "https://loop.example/a.wav"
+    second = "https://loop.example/b.wav"
+    client = configure_client(tmp_path, monkeypatch)
+    transport, _ = install_transport(
+        monkeypatch,
+        FakeHttpResponse(302, headers={"Location": first}),
+        FakeHttpResponse(302, headers={"Location": second}),
+        FakeHttpResponse(302, headers={"Location": first}),
     )
 
     created = create_direct_job(client)
@@ -334,9 +400,12 @@ def test_a_redirect_is_refused_and_the_target_is_never_requested(
     assert finished["status"] == "failed", finished
     assert finished["error_code"] == "DIRECT_URL_NOT_ALLOWED", finished
     assert finished["retryable"] is False, finished
-    assert "redirect" in finished["error"].lower(), finished
-    assert transport.requests == [{"url": MEDIA_URL, "timeout": 30}]
-    assert MEDIA_URL not in finished["error"]
+    assert "loop" in finished["error"].lower(), finished
+    assert [request["url"] for request in transport.requests] == [
+        MEDIA_URL,
+        first,
+        second,
+    ]
     assert uploads_for(tmp_path / "uploads", job_id) == []
 
 

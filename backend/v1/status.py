@@ -79,7 +79,8 @@ NON_RETRYABLE_ERROR_CODES = frozenset(
         # A malformed or unsupported link is not fixed by retrying it.
         "INVALID_URL",
         "UNSUPPORTED_URL",
-        # Ticket #32: a non-public direct target and a redirect refusal are
+        # Ticket #32/#33: a non-public direct target or redirect hop and an
+        # invalid redirect chain (missing Location, too many hops, a loop) are
         # policy decisions; a retry would send the same request again. An
         # oversized response is the caller's file, not a transient failure.
         "DIRECT_URL_NOT_ALLOWED",

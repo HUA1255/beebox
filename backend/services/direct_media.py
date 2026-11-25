@@ -6,10 +6,12 @@ queue, validates it, and then re-enters the ordinary transcription queue with
 the downloaded file as BeeBox-owned temporary media (ADR-0011), exactly like
 the audio path of a video-link job.
 
-Ticket #32 establishes the security baseline and deliberately follows no
-redirects: every resolved address must be globally routable and any 3xx answer
-fails the job without requesting its target. Ticket #33 adds bounded
-redirect following on top of this seam.
+Ticket #32 established the security baseline: every resolved address must be
+globally routable. Ticket #33 follows a bounded number of redirects (CDN and
+signed temporary links rely on them) while applying the same check to every
+hop: the scheme, host and every resolved address are validated before the hop
+is requested, relative locations are resolved against the current URL, and a
+loop or an exhausted hop budget fails the job without further requests.
 
 Two module-level seams keep every test offline:
 
@@ -31,7 +33,7 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from sqlalchemy.orm import Session
@@ -63,6 +65,8 @@ logger = logging.getLogger(__name__)
 
 DIRECT_SOURCE_TYPE = "direct"
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
+#: How many redirect hops a direct download may follow before it fails.
+MAX_REDIRECTS = 5
 
 _PORTS = {"http": 80, "https": 443}
 _MEDIA_SUFFIXES = {
@@ -108,7 +112,7 @@ class DirectSourceError(BeeBoxError):
 
 
 class DirectUrlNotAllowedError(DirectSourceError):
-    """The link resolves to a non-public address or answers with a redirect."""
+    """A hop resolves to a non-public address or the redirect chain is invalid."""
 
     code = "DIRECT_URL_NOT_ALLOWED"
 
@@ -329,6 +333,85 @@ def _ensure_public_addresses(host: str, port: int) -> None:
             )
 
 
+def _require_public_host(host: str, port: int) -> None:
+    """Resolve ``host`` and refuse it unless every answer is public.
+
+    A resolution failure is a transport problem the caller may retry; a
+    non-public answer is a policy refusal that a retry cannot fix.
+    """
+    try:
+        _ensure_public_addresses(host, port)
+    except HttpTransportError as exc:
+        raise DownloadNetworkError(str(exc), stage="download") from exc
+
+
+def _redirect_target(current_url: str, location: str | None) -> str:
+    """Resolve one ``Location`` header against the URL that answered it."""
+    value = (location or "").strip()
+    if not value:
+        raise DirectUrlNotAllowedError(
+            "The direct link redirected without a usable Location header"
+        )
+    try:
+        return urljoin(current_url, value)
+    except ValueError as exc:
+        raise DirectUrlNotAllowedError(
+            "The direct link redirected to a location that is not a valid URL"
+        ) from exc
+
+
+def _parse_redirect_target(target: str) -> tuple[str, str, int]:
+    """A redirect target must be absolute http(s) before it is requested."""
+    try:
+        return parse_direct_url(target)
+    except InvalidUrlError as exc:
+        raise DirectUrlNotAllowedError(
+            "The direct link redirected to a location that is not an absolute "
+            "http(s) URL"
+        ) from exc
+
+
+def _open_response(
+    url: str,
+    transport: HttpTransport,
+    *,
+    timeout: float,
+    is_cancelled: Callable[[], bool] | None,
+) -> tuple[HttpResponse, str]:
+    """GET ``url``, following at most :data:`MAX_REDIRECTS` validated hops.
+
+    Every hop is parsed, resolved and checked before it is requested, so a
+    redirect that points at a non-public address is refused without a request
+    to that address. Redirect responses are closed as soon as their target is
+    known. The returned response is the first non-3xx answer, paired with the
+    URL that served it.
+    """
+    current_url = url
+    visited = {url}
+    redirects = 0
+    while True:
+        if is_cancelled is not None and is_cancelled():
+            raise BeeBoxError("TASK_CANCELLED", "Task was cancelled", stage="cancel")
+        response = transport.get(current_url, timeout=timeout)
+        status = response.status_code
+        if not 300 <= status < 400:
+            return response, current_url
+        location = _header(response.headers, "location")
+        response.close()
+        if redirects >= MAX_REDIRECTS:
+            raise DirectUrlNotAllowedError(
+                f"The direct link redirected more than {MAX_REDIRECTS} times"
+            )
+        target = _redirect_target(current_url, location)
+        if target in visited:
+            raise DirectUrlNotAllowedError("The direct link redirects form a loop")
+        _, host, port = _parse_redirect_target(target)
+        _require_public_host(host, port)
+        visited.add(target)
+        current_url = target
+        redirects += 1
+
+
 def download_direct_media(
     url: str,
     destination: Path,
@@ -337,35 +420,26 @@ def download_direct_media(
 ) -> Path:
     """Download and validate one direct media link; return the stored path.
 
-    ``is_cancelled`` is polled once per streamed chunk so a cancel stops a
-    large transfer instead of waiting for the whole body.
+    Redirects are followed manually with a small cap; every hop is checked
+    before it is requested and the final answer goes through the same media
+    checks as a redirect-free response. ``is_cancelled`` is polled between
+    hops and once per streamed chunk so a cancel stops a large transfer
+    instead of waiting for the whole body.
     """
     _, host, port = parse_direct_url(url)
     limit = uploads.max_upload_bytes()
-    try:
-        _ensure_public_addresses(host, port)
-    except HttpTransportError as exc:
-        raise DownloadNetworkError(str(exc), stage="download") from exc
+    _require_public_host(host, port)
     transport = get_http_transport()
+    response: HttpResponse | None = None
+    final_url = url
     try:
-        response = transport.get(url, timeout=download_options().timeout_seconds)
-    except HttpTimeout as exc:
-        raise DownloadTimeoutError(
-            "The direct media download timed out", stage="download"
-        ) from exc
-    except HttpTransportError as exc:
-        raise DownloadNetworkError(
-            "The direct media download failed for a network reason", stage="download"
-        ) from exc
-    try:
+        response, final_url = _open_response(
+            url,
+            transport,
+            timeout=download_options().timeout_seconds,
+            is_cancelled=is_cancelled,
+        )
         status = response.status_code
-        if 300 <= status < 400:
-            # Ticket #32 deliberately follows nothing; ticket #33 adds the
-            # bounded, per-hop validated redirect loop on top of this refusal.
-            raise DirectUrlNotAllowedError(
-                f"The direct link answered with a redirect (HTTP {status}); "
-                "redirects are not followed"
-            )
         if not 200 <= status < 300:
             raise DownloadNetworkError(
                 f"The direct media download failed with HTTP {status}",
@@ -417,8 +491,11 @@ def download_direct_media(
         destination.unlink(missing_ok=True)
         raise
     finally:
-        response.close()
-    final = destination.with_name(destination.name + _media_suffix(content_type, url))
+        if response is not None:
+            response.close()
+    final = destination.with_name(
+        destination.name + _media_suffix(content_type, final_url)
+    )
     destination.replace(final)
     return final
 
@@ -648,6 +725,7 @@ def execute_direct_job(job_id: str) -> None:
 
 __all__ = [
     "DIRECT_SOURCE_TYPE",
+    "MAX_REDIRECTS",
     "DirectFileTooLargeError",
     "DirectMediaFormatError",
     "DirectSourceError",
