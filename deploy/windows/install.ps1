@@ -78,7 +78,7 @@
     .\deploy\windows\install.ps1 -Root D:\BeeBox -ModelRoot E:\beebox-models -Port 17494
 
 .EXAMPLE
-    .\deploy\windows\install.ps1 -GitRemote https://github.com/HUA1255/beebox.git -Tag v1.0.2
+    .\deploy\windows\install.ps1 -GitRemote https://github.com/HUA1255/beebox.git -Tag v1.0.3
 
 .EXAMPLE
     .\deploy\windows\install.ps1 -DryRun

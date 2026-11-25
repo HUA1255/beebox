@@ -4,6 +4,22 @@ All notable BeeBox changes are documented here. The format follows Keep a Change
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-11-26
+
+### Added
+
+- 按链接转写新增 X 单条帖子与知乎 zvideo：两者统一走语音识别（`text_source=asr`），X 的 `t.co` 短链在任务阶段经 `BEEBOX_DOWNLOAD_PROXY` 展开；主页、搜索、回答、文章等非单条链接在提交或下载前拒绝（refs #18、#28、#29、#30）。
+- 新增 `source.type = "direct"` 媒体直链来源：支持公网音视频直链下载后转写，`title`、`author`、`platform`、`page_url` 原样回显；校验全部解析地址与每一跳跳转（SSRF）、Content-Type/ffprobe 音轨与 `BEEBOX_MAX_UPLOAD_BYTES` 上限；过期/4xx/5xx 可重试，超时与临时文件清理按契约处理（refs #32、#33）。
+- 平台主机、链接形态与能力收敛为一张平台规则表；`JobSourceInfo` 新增 `platform` 与 `page_url`（refs #27）。
+
+### Changed
+
+- 音轨下载优先 `bestaudio`，平台只提供 muxed 文件（知乎 zvideo）时回退到 `best` 并提取音频（refs #30）。
+
+### Fixed
+
+- 直链下载改用独立的 `requests.Session` 承载 `trust_env`，并发送 `BeeBox/<version> (direct media)` 用户代理；修复真实下载必然失败与部分站点以 406 拒绝默认 UA 的问题（refs #32）。
+
 ## [1.0.2] - 2026-11-25
 
 ### Added
@@ -406,7 +422,8 @@ BeeBox 首个上线版本：只提供 `/v1` 接口，以 Windows 原生服务部
 - The macOS package is not signed or notarized.
 - Windows and Linux packages are not published.
 
-[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/HUA1255/beebox/releases/tag/v1.0.3
 [1.0.2]: https://github.com/HUA1255/beebox/releases/tag/v1.0.2
 [1.0.1]: https://github.com/HUA1255/beebox/releases/tag/v1.0.1
 [1.0.0]: https://github.com/HUA1255/beebox/releases/tag/v1.0.0

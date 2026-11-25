@@ -53,7 +53,7 @@ CI 会执行语法检查与一次 DryRun，并断言它没有创建任何文件�
 已安装的主机可以一条命令升级到任意已发布 tag：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.2
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.3
 ```
 
 `deploy.ps1` 按以下顺序执行，任何一步失败都会立即停止并打印回滚提示：
@@ -75,14 +75,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 
 失败时 finally 分支会在服务可达时恢复队列；如果服务已停止，暂停状态随进程一起消失，服务下次启动自然是不暂停的。脚本会提示回滚命令，例如：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.2
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.3
 ```
 
 ### deploy.ps1 参数
 
 | 参数 | 默认值 | 说明 |
 | --- | --- | --- |
-| `-Tag` | 必填 | 要部署的 git tag，例如 `v1.0.2` |
+| `-Tag` | 必填 | 要部署的 git tag，例如 `v1.0.3` |
 | `-Root` | `C:\BeeBox` | 固定安装根目录 |
 | `-DrainTimeoutSeconds` | `3600` | 等待当前任务结束的最长秒数；超时失败，不中断任务 |
 | `-HealthTimeoutSeconds` | `300` | 重启后等待 `/v1/health` 报出新 commit 与版本的最长秒数 |
@@ -92,7 +92,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 
 ### DryRun
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.2 -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.3 -DryRun
 ```
 
 DryRun 不需要已安装好的 `<root>`，也不会要求管理员权限（CI 就是这样跑的）。它能读取现有 checkout 与 `settings.env` 时，会显示解析到的 commit、版本、端口与服务名；读不到就用默认值继续打印计划步骤。CI 断言退出码为 0、没有创建根目录，并且步骤顺序正确。
@@ -102,7 +102,7 @@ DryRun 不需要已安装好的 `<root>`，也不会要求管理员权限（CI �
 `-IssueNumber` 使用部署主机上的 `gh` CLI。要求 `gh` 已登录，且 `<root>\app` 的 `origin` 指向 GitHub 仓库（`install.ps1` 默认就从 origin clone）。回写失败只警告，不会让已经成功的部署变成失败。示例：
 
 ```powershell
-.\deploy\windows\deploy.ps1 -Tag v1.0.2 -IssueNumber 54
+.\deploy\windows\deploy.ps1 -Tag v1.0.3 -IssueNumber 54
 ```
 
 ### 上线后验收
@@ -138,10 +138,10 @@ Set-NetFirewallRule -Name OpenSSH-Server-In-TCP -Enabled True -Profile Private `
 
 ```bash
 ssh <user>@<beebox-host> \
-  'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Admin\beebox\deploy\windows\deploy.ps1 -Tag v1.0.2 -DryRun'
+  'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Admin\beebox\deploy\windows\deploy.ps1 -Tag v1.0.3 -DryRun'
 
 ssh <user>@<beebox-host> \
-  'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Admin\beebox\deploy\windows\deploy.ps1 -Tag v1.0.2 -IssueNumber 54'
+  'powershell -NoProfile -ExecutionPolicy Bypass -File C:\Admin\beebox\deploy\windows\deploy.ps1 -Tag v1.0.3 -IssueNumber 54'
 ```
 
 - `C:\Admin\beebox` 是运维用的仓库 checkout（或至少是放部署脚本的目录），不要用 `<root>\app` 里即将被切换的那份作为唯一副本；虽然 PowerShell 会在切换前读完脚本，独立副本更容易排查问题。
