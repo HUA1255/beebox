@@ -1,6 +1,7 @@
 """The video platform boundary (ticket #42).
 
-Everything that talks to Bilibili or YouTube goes through this package:
+Everything that talks to a supported video platform (Bilibili, YouTube or
+Zhihu) goes through this package:
 recognizing a link, fetching video metadata and the subtitle track list,
 downloading one subtitle track, downloading only the audio stream (ticket
 #44) and checking login state (tickets #46/#47).
@@ -56,7 +57,9 @@ from backend.services.video_platform.models import (
     LOGIN_UNKNOWN,
     LOGIN_VALID,
     PLATFORM_BILIBILI,
+    PLATFORM_X,
     PLATFORM_YOUTUBE,
+    PLATFORM_ZHIHU,
     TEXT_SOURCE_ASR,
     TEXT_SOURCE_AUTO,
     TEXT_SOURCE_MANUAL,
@@ -177,7 +180,9 @@ __all__ = [
     "PLATFORM_BILIBILI",
     "PLATFORM_REAL",
     "PLATFORM_RULES",
+    "PLATFORM_X",
     "PLATFORM_YOUTUBE",
+    "PLATFORM_ZHIHU",
     "PlatformCapabilities",
     "PlatformRule",
     "REASON_AUTO_CHINESE",

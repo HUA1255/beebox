@@ -18,7 +18,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from backend.services.video_platform.models import PLATFORM_BILIBILI, PLATFORM_YOUTUBE
+from backend.services.video_platform.models import (
+    PLATFORM_BILIBILI,
+    PLATFORM_X,
+    PLATFORM_YOUTUBE,
+    PLATFORM_ZHIHU,
+)
 
 
 @dataclass(frozen=True)
@@ -38,8 +43,10 @@ class UrlForm:
     ``path`` matches the URL path. A named ``id`` group carries the video id
     unless ``query_id`` names the query parameter that does (``watch?v=``).
     ``canonical`` is a format template with ``{id}`` and, when ``part_query``
-    is set, ``{part}`` (empty for part 1, ``?p=N`` otherwise); ``None`` keeps
-    the submitted URL because the short link is resolved by the downloader.
+    is set, ``{part}`` (empty for part 1, ``?p=N`` otherwise); any other named
+    group the path pattern captures is available to the template too (an X
+    post's ``{user}``). ``None`` keeps the submitted URL because the short
+    link is resolved by the downloader.
     ``part_query`` names the query parameter that selects a multi-part index
     and ``part_error`` is the unsupported-link message for a bad value.
     """
@@ -95,6 +102,19 @@ _YOUTUBE_VIDEO_PATH = re.compile(r"^/(?:shorts|embed)/(?P<id>[A-Za-z0-9_-]+)")
 _YOUTUBE_ANY_PATH = re.compile(r".*")
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _YOUTUBE_LIVE_PATH = re.compile(r"^/live(?:/|$)")
+
+# A single post is /<user>/status/<numeric id>; nothing may follow the id
+# except a trailing slash, and the query (tracking parameters) is ignored
+# because it never selects different content.
+_X_POST_PATH = re.compile(r"^/(?P<user>[A-Za-z0-9_]+)/status/(?P<id>[0-9]+)/?$")
+# /i/... holds the site's own pages (login flow, lists, signed-in web
+# status links); none of them is a post to transcribe.
+_X_INTERNAL_PATH = re.compile(r"^/i(?:/|$)")
+_X_UNSUPPORTED_MESSAGE = "The X link does not point to a single post"
+
+# Zhihu's single videos are zvideo pages with a numeric id; answers, articles,
+# columns and questions are different pages and stay unsupported.
+_ZHIHU_VIDEO_PATH = re.compile(r"^/zvideo/(?P<id>[0-9]+)(?:/|$)")
 
 
 PLATFORM_RULES: tuple[PlatformRule, ...] = (
@@ -182,6 +202,59 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                 # A /live link is always a stream, even with a video id.
                 reject_path=_YOUTUBE_LIVE_PATH,
                 reject_path_message="Live streams are not supported",
+            ),
+        ),
+    ),
+    PlatformRule(
+        platform=PLATFORM_X,
+        capabilities=PlatformCapabilities(
+            # X reports caption tracks, but they are not usable platform
+            # subtitles (ticket #28): every X job is transcribed from audio.
+            has_platform_subtitles=False,
+            # Public posts need no cookie; age-restricted posts are refused.
+            requires_login=False,
+            has_parts=False,
+            # t.co short links are ticket #29, not part of this rule.
+            has_short_links=False,
+        ),
+        hosts=tuple(
+            HostRule(
+                host=host,
+                forms=(
+                    UrlForm(
+                        path=_X_POST_PATH,
+                        # Normalize both hosts (and their subdomains) to the
+                        # x.com post; the submitted query never selects content.
+                        canonical="https://x.com/{user}/status/{id}",
+                    ),
+                ),
+                unsupported_message=_X_UNSUPPORTED_MESSAGE,
+                reject_path=_X_INTERNAL_PATH,
+                reject_path_message="X internal pages are not posts",
+            )
+            for host in ("x.com", "twitter.com")
+        ),
+    ),
+    PlatformRule(
+        platform=PLATFORM_ZHIHU,
+        capabilities=PlatformCapabilities(
+            # A zvideo page has no platform subtitle tracks: the job always
+            # transcribes the audio (ticket #30).
+            has_platform_subtitles=False,
+            requires_login=False,
+            has_parts=False,
+            has_short_links=False,
+        ),
+        hosts=(
+            HostRule(
+                host="zhihu.com",
+                forms=(
+                    UrlForm(
+                        path=_ZHIHU_VIDEO_PATH,
+                        canonical="https://www.zhihu.com/zvideo/{id}",
+                    ),
+                ),
+                unsupported_message="The Zhihu link does not point to a single zvideo",
             ),
         ),
     ),

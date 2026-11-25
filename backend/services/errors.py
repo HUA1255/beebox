@@ -26,7 +26,8 @@ ERROR_CODES: dict[str, str] = {
         "with a redirect; it is refused before any follow-up request."
     ),
     "UNSUPPORTED_URL": (
-        "The link is not a supported single Bilibili or YouTube video "
+        "The link is not a supported single video on Bilibili, YouTube, X or "
+        "Zhihu "
         "(other hosts, playlists, collections and live streams are refused)."
     ),
     "VIDEO_NOT_ACCESSIBLE": (

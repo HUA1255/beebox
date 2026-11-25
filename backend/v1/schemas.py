@@ -195,7 +195,9 @@ class JobSourceRequest(BaseModel):
     url: str | None = Field(
         default=None,
         description=(
-            "Bilibili or YouTube video URL for type=url (ticket #42), or an "
+            "Bilibili, YouTube, X single-post or Zhihu video URL for type=url "
+            "(ticket #42; X posts and Zhihu zvideos are transcribed from "
+            "their audio, so they never use platform subtitles), or an "
             "absolute http(s) audio/video file URL for type=direct (ticket #32)"
         ),
     )
@@ -227,7 +229,9 @@ class JobOptionsRequest(BaseModel):
         pattern=r"^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*$",
         description=(
             "Restrict a video-link job to platform subtitles in this language "
-            "(BCP-47 tag such as zh-Hans or en); no other language is used"
+            "(BCP-47 tag such as zh-Hans or en); no other language is used. "
+            "A platform without platform subtitles (X, Zhihu) fails with "
+            "VIDEO_SUBTITLE_UNAVAILABLE instead"
         ),
     )
     prefer: Literal["asr"] | None = Field(
@@ -258,8 +262,8 @@ class JobSourceInfo(BaseModel):
     url: str | None = Field(
         default=None,
         description=(
-            "Original video link for type=url, or the submitted media URL for "
-            "type=direct"
+            "Original video link for type=url (Bilibili, YouTube, X or Zhihu), "
+            "kept exactly as submitted; the submitted media URL for type=direct"
         ),
     )
     title: str | None = Field(default=None, description="Media title, when the source names one")
@@ -267,8 +271,8 @@ class JobSourceInfo(BaseModel):
     platform: str | None = Field(
         default=None,
         description=(
-            "Source platform for type=url (bilibili or youtube); null for file "
-            "sources and when a direct source names none"
+            "Source platform for type=url (bilibili, youtube, x or zhihu); null "
+            "for file sources and when a direct source names none"
         ),
     )
     page_url: str | None = Field(

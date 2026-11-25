@@ -40,21 +40,33 @@ def _host_rule(rule: platforms.PlatformRule, host: str) -> platforms.HostRule | 
     return None
 
 
-def _form_id(
+def _form_groups(
     form: platforms.UrlForm, path: str, query: dict[str, list[str]]
-) -> str | None:
+) -> dict[str, str] | None:
+    """The named groups of the first matching form, with ``id`` resolved.
+
+    Every named group the path pattern captured is kept so a canonical
+    template can use it (an X post needs the account name as well as the id).
+    """
     match = form.path.match(path)
     if match is None:
         return None
-    value = match.groupdict().get("id")
+    groups = {
+        key: value
+        for key, value in match.groupdict().items()
+        if isinstance(value, str)
+    }
+    value = groups.get("id")
     if value is None and form.query_id is not None:
         values = [item for item in query.get(form.query_id, []) if item]
         value = values[0] if values else None
+        if value is not None:
+            groups["id"] = value
     if value is None:
         return None
     if form.video_id_pattern is not None and not form.video_id_pattern.match(value):
         return None
-    return value
+    return groups
 
 
 def _form_part(form: platforms.UrlForm, query: dict[str, list[str]]) -> int:
@@ -69,12 +81,16 @@ def _form_part(form: platforms.UrlForm, query: dict[str, list[str]]) -> int:
 
 
 def _canonical_url(
-    form: platforms.UrlForm, *, video_id: str, part: int | None, original: str
+    form: platforms.UrlForm,
+    *,
+    groups: dict[str, str],
+    part: int | None,
+    original: str,
 ) -> str:
     if form.canonical is None:
         return original
     part_suffix = f"?p={part}" if form.part_query and part and part > 1 else ""
-    return form.canonical.format(id=video_id, part=part_suffix)
+    return form.canonical.format(part=part_suffix, **groups)
 
 
 def _parse_host(
@@ -95,15 +111,15 @@ def _parse_host(
             host_rule.reject_path_message or "This link is not a single video"
         )
     for form in host_rule.forms:
-        video_id = _form_id(form, path, query)
-        if video_id is None:
+        groups = _form_groups(form, path, query)
+        if groups is None:
             continue
         part = _form_part(form, query) if form.part_query else None
         return VideoRef(
             platform=rule.platform,
-            video_id=video_id,
+            video_id=groups["id"],
             canonical_url=_canonical_url(
-                form, video_id=video_id, part=part, original=original
+                form, groups=groups, part=part, original=original
             ),
             original_url=original,
             part=part,

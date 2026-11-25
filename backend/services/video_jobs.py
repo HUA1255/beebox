@@ -16,7 +16,9 @@ subtitle (#42/#43)
     conversion, and the text source distinguishes manual from automatic.
 audio/ASR (#44)
     When no usable subtitle exists, or the caller sent ``options.prefer=asr``,
-    only the audio stream is downloaded. The job is then re-routed through
+    only the audio stream is downloaded. A platform whose rule disables
+    platform subtitles (X and Zhihu, tickets #28/#30) always takes this path,
+    even when the downloader reports tracks. The job is then re-routed through
     :func:`backend.services.tasks.start_task_in_background`, which submits it
     to the normal GPU queue as an ordinary transcription; the downloaded audio
     is BeeBox-owned temporary media and ticket #40's completion cleanup drops
@@ -70,6 +72,7 @@ from backend.services.video_platform import (
     download_options,
     get_video_platform,
     parse_video_url,
+    platform_rule,
 )
 from backend.utils.events import event_bus
 from backend.utils.transcript_text import transcript_text_from_segments
@@ -440,6 +443,18 @@ def _complete_from_subtitles(
     event_bus.publish("task.completed", {"id": row.id, "status": row.status, "progress": row.progress})
 
 
+def _platform_subtitles_available(platform: str) -> bool:
+    """Whether the platform's rule table offers usable subtitles (ticket #28).
+
+    X reports caption tracks that are not usable platform subtitles; its rule
+    carries ``has_platform_subtitles=False`` and every such job is transcribed
+    from audio. A platform missing from the table keeps the previous behaviour
+    because every accepted link comes from that table.
+    """
+    rule = platform_rule(platform)
+    return rule is None or rule.capabilities.has_platform_subtitles
+
+
 def _require_bilibili_login(
     db: Session,
     row: TranscriptionTask,
@@ -489,6 +504,25 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     # caller-fixable condition, not something to discover halfway through.
     _require_bilibili_login(db, row, ref=ref, prefer_asr=prefer_asr)
 
+    subtitle_language = options.get("subtitle_language")
+    requested_language = subtitle_language if isinstance(subtitle_language, str) else None
+    platform_subtitles = _platform_subtitles_available(ref.platform)
+    if not platform_subtitles and requested_language:
+        # The capability is known offline, so refuse before fetching anything.
+        # A caller-specified language never falls back to another text source.
+        task_logs.add_log(
+            db,
+            row.id,
+            "video",
+            "warning",
+            "Platform has no subtitles; refusing the requested language",
+            {"platform": ref.platform, "subtitle_language": requested_language},
+        )
+        raise SubtitleUnavailableError(
+            f"{ref.platform} links have no platform subtitles; "
+            f"subtitle_language={requested_language!r} cannot be used"
+        )
+
     task_service.set_task_state(db, row, "preprocessing", 5)
     task_logs.add_log(
         db,
@@ -503,8 +537,22 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
 
     _store_metadata(db, row, options, source, ref=ref, info=info)
 
-    subtitle_language = options.get("subtitle_language")
-    requested_language = subtitle_language if isinstance(subtitle_language, str) else None
+    if not platform_subtitles:
+        # Never consult the reported tracks: a platform without usable
+        # subtitles always transcribes its audio (tickets #28, #30).
+        task_logs.add_log(
+            db,
+            row.id,
+            "video",
+            "info",
+            "Platform subtitles are unavailable; using speech recognition",
+            {"platform": ref.platform, "reported_tracks": len(info.tracks)},
+        )
+        _download_audio(
+            db, row, options, source, platform=platform, ref=ref, download=download
+        )
+        return True
+
     decision = decide_subtitle(
         info,
         subtitle_language=requested_language,
