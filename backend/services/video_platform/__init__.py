@@ -1,6 +1,7 @@
 """The video platform boundary (ticket #42).
 
-Everything that talks to Bilibili or YouTube goes through this package:
+Everything that talks to a supported video platform (Bilibili, YouTube or
+Zhihu) goes through this package:
 recognizing a link, fetching video metadata and the subtitle track list,
 downloading one subtitle track, downloading only the audio stream (ticket
 #44) and checking login state (tickets #46/#47).
