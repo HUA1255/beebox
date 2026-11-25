@@ -477,8 +477,10 @@ try {
     if ($status -eq 'succeeded') {
         Write-Step 'Reading the result summary'
         $result = Invoke-JsonApi -Method Get -Path "/v1/jobs/$([uri]::EscapeDataString($jobId))/result" -Token $Token -TimeoutSeconds 120
-        $paragraphs = Get-JsonArray -Object $result -Name 'paragraphs'
-        $segments = Get-JsonArray -Object $result -Name 'segments'
+        # @() keeps a one-element result an array: a scalar PSCustomObject has
+        # no Count in Windows PowerShell 5.1 and would print a blank count.
+        $paragraphs = @(Get-JsonArray -Object $result -Name 'paragraphs')
+        $segments = @(Get-JsonArray -Object $result -Name 'segments')
         $text = [string](Get-JsonValue -Object $result -Name 'text' -Default '')
         if ([string]::IsNullOrWhiteSpace($textSource)) {
             $textSource = Get-TextSource -State $result
