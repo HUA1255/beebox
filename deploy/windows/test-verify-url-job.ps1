@@ -236,8 +236,16 @@ try {
                 Send-Json -Stream $stream -StatusCode 200 -Json $json
             }
             elseif ($method -eq 'GET' -and $path -eq '/v1/jobs/job-1/result') {
-                $paragraphs = '{"index":1,"start":0.0,"end":1.0,"speaker":null,"text":"x","segment_ids":[1]},{"index":2,"start":1.0,"end":2.0,"speaker":null,"text":"y","segment_ids":[2,3]}'
-                $segments = '{"id":1,"start":0.0,"end":1.0,"text":"x"},{"id":2,"start":1.0,"end":2.0,"text":"y"},{"id":3,"start":2.0,"end":3.0,"text":"z"}'
+                if ($Scenario -eq 'single') {
+                    # A one-paragraph, one-segment result is a scalar in
+                    # PowerShell 5.1 unless the verifier wraps it in an array.
+                    $paragraphs = '{"index":1,"start":0.0,"end":3.0,"speaker":null,"text":"x","segment_ids":[1]}'
+                    $segments = '{"id":1,"start":0.0,"end":3.0,"text":"x"}'
+                }
+                else {
+                    $paragraphs = '{"index":1,"start":0.0,"end":1.0,"speaker":null,"text":"x","segment_ids":[1]},{"index":2,"start":1.0,"end":2.0,"speaker":null,"text":"y","segment_ids":[2,3]}'
+                    $segments = '{"id":1,"start":0.0,"end":1.0,"text":"x"},{"id":2,"start":1.0,"end":2.0,"text":"y"},{"id":3,"start":2.0,"end":3.0,"text":"z"}'
+                }
                 $textJson = ConvertTo-Json -InputObject $transcript -Compress
                 $json = '{"job_id":"job-1","status":"succeeded","text":' + $textJson + ',"language":"zh","duration_ms":3000,"segments":[' + $segments + '],"paragraphs":[' + $paragraphs + '],"speakers":[],"source":{"type":"url","text_source":"asr"}}'
                 Send-Json -Stream $stream -StatusCode 200 -Json $json
@@ -376,6 +384,35 @@ try {
     Assert-True -Condition (@($calls | Where-Object { $_ -eq 'GET /v1/health' }).Count -eq 1) -Message 'The instance health was checked once.'
     Assert-True -Condition (@($calls | Where-Object { $_ -eq 'POST /v1/jobs' }).Count -eq 1) -Message 'Exactly one job was submitted.'
     Assert-True -Condition (@($calls | Where-Object { $_ -eq 'GET /v1/jobs/job-1/result' }).Count -eq 1) -Message 'The succeeded job result was fetched once.'
+}
+finally {
+    Stop-FakeJobServer -Process $server
+}
+
+# ---------------------------------------------------------------------------
+# A single paragraph and segment are counted (PowerShell 5.1 scalar trap)
+# ---------------------------------------------------------------------------
+Write-Step 'A single paragraph and segment are counted'
+$singleRoot = New-TestRoot -Name 'BeeBoxSingle'
+$port = Get-Random -Minimum 20000 -Maximum 40000
+$callsLog = Join-Path $WorkDirectory 'calls-single.log'
+$bodyLog = Join-Path $WorkDirectory 'body-single.json'
+$authLog = Join-Path $WorkDirectory 'auth-single.log'
+$ready = Join-Path $WorkDirectory 'ready-single.txt'
+$server = $null
+try {
+    $server = Start-FakeJobServer -Port $port -Scenario 'single' -RequestLog $callsLog -BodyLog $bodyLog -AuthLog $authLog -ReadyPath $ready -TranscriptPath $transcriptPath
+    $run = Invoke-Verifier -Arguments @(
+        '-Url', 'https://example.invalid/video',
+        '-Root', $singleRoot,
+        '-BaseUrl', "http://127.0.0.1:$port",
+        '-TimeoutMinutes', '1',
+        '-PollSeconds', '1'
+    )
+    Assert-True -Condition ($run.ExitCode -eq 0) -Message 'A one-paragraph result exits 0.'
+    Assert-True -Condition ($run.Output -match 'Paragraphs:\s+1') -Message 'The summary counts a single paragraph as 1, not blank.'
+    Assert-True -Condition ($run.Output -match 'Segments:\s+1') -Message 'The summary counts a single segment as 1, not blank.'
+    Assert-True -Condition ($run.Output -match 'Characters:\s+10') -Message 'The single-result summary keeps the code-point character count.'
 }
 finally {
     Stop-FakeJobServer -Process $server
