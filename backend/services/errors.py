@@ -22,8 +22,10 @@ ERROR_CODES: dict[str, str] = {
     "TASK_CANCELLED": "The task was cancelled.",
     "INVALID_URL": "The video link is not a valid absolute URL.",
     "DIRECT_URL_NOT_ALLOWED": (
-        "The direct media link resolves to a non-public address, or answers "
-        "with a redirect; it is refused before any follow-up request."
+        "The direct media link, or one of its redirect hops, resolves to a "
+        "non-public address (loopback, private, link-local or reserved), or "
+        "the redirect chain is invalid (a missing or non-http(s) Location, "
+        "too many hops or a loop). A non-public hop is never requested."
     ),
     "UNSUPPORTED_URL": (
         "The link is not a supported single video on Bilibili, YouTube, X or "
