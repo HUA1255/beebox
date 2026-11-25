@@ -864,6 +864,18 @@
             ],
             "title": "Language"
           },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page the media came from, for direct sources; null when the source itself is the page (file and video-link jobs)",
+            "title": "Page Url"
+          },
           "part": {
             "anyOf": [
               {
@@ -887,6 +899,18 @@
             ],
             "description": "Title of the selected Bilibili part, from platform metadata",
             "title": "Part Title"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source platform for type=url (bilibili or youtube); null for file sources and when a direct source names none",
+            "title": "Platform"
           },
           "subtitle_language": {
             "anyOf": [

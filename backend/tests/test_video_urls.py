@@ -9,12 +9,25 @@ any download is attempted.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from backend.services.video_platform import (
+    PLATFORM_BILIBILI,
+    PLATFORM_YOUTUBE,
+    SUPPORTED_PLATFORMS,
     InvalidUrlError,
     UnsupportedUrlError,
     parse_video_url,
+    platform_rule,
+)
+from backend.services.video_platform import platforms
+from backend.services.video_platform.platforms import (
+    HostRule,
+    PlatformCapabilities,
+    PlatformRule,
+    UrlForm,
 )
 
 
@@ -96,3 +109,126 @@ def test_short_and_youtube_links_have_no_bilibili_part() -> None:
     assert short.canonical_url == "https://b23.tv/BeeBox42"
     assert parse_video_url("https://youtu.be/dQw4w9WgXcQ").part is None
     assert parse_video_url("https://www.youtube.com/shorts/dQw4w9WgXcQ").part is None
+
+
+def test_short_link_part_rules_follow_the_video_form() -> None:
+    with pytest.raises(UnsupportedUrlError):
+        parse_video_url("https://b23.tv/BeeBox42?p=0")
+    assert parse_video_url("https://b23.tv/BeeBox42?p=3").part == 3
+    # Bangumi episodes are not multi-part videos; ?p= is ignored.
+    assert parse_video_url("https://www.bilibili.com/bangumi/play/ep123456?p=2").part is None
+
+
+def test_youtube_short_links_reject_playlists() -> None:
+    with pytest.raises(UnsupportedUrlError) as error:
+        parse_video_url("https://youtu.be/dQw4w9WgXcQ?list=PL123456")
+    assert error.value.code == "UNSUPPORTED_URL"
+
+
+@pytest.mark.parametrize(
+    ("url", "platform", "video_id", "canonical"),
+    [
+        (
+            "https://www.bilibili.com/bangumi/play/ep123456",
+            PLATFORM_BILIBILI,
+            "ep123456",
+            "https://www.bilibili.com/bangumi/play/ep123456",
+        ),
+        (
+            "https://youtu.be/dQw4w9WgXcQ",
+            PLATFORM_YOUTUBE,
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+        (
+            "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+            PLATFORM_YOUTUBE,
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+        (
+            "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            PLATFORM_YOUTUBE,
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+        (
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            PLATFORM_YOUTUBE,
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+        (
+            "https://www.youtube.com/watch/?v=dQw4w9WgXcQ",
+            PLATFORM_YOUTUBE,
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        ),
+    ],
+)
+def test_each_link_form_maps_to_its_stable_canonical_url(
+    url: str, platform: str, video_id: str, canonical: str
+) -> None:
+    ref = parse_video_url(url)
+
+    assert ref.platform == platform
+    assert ref.video_id == video_id
+    assert ref.canonical_url == canonical
+    assert ref.original_url == url
+
+
+def test_platform_capabilities_describe_what_each_platform_offers() -> None:
+    bilibili = platform_rule(PLATFORM_BILIBILI)
+    youtube = platform_rule(PLATFORM_YOUTUBE)
+
+    assert bilibili is not None
+    assert bilibili.capabilities.has_platform_subtitles is True
+    assert bilibili.capabilities.requires_login is True
+    assert bilibili.capabilities.has_parts is True
+    assert bilibili.capabilities.has_short_links is True
+    assert youtube is not None
+    assert youtube.capabilities.has_platform_subtitles is True
+    assert youtube.capabilities.requires_login is False
+    assert youtube.capabilities.has_parts is False
+    assert youtube.capabilities.has_short_links is True
+    assert platform_rule("example") is None
+
+
+def test_supported_platforms_are_derived_from_the_rule_table() -> None:
+    assert SUPPORTED_PLATFORMS == (PLATFORM_BILIBILI, PLATFORM_YOUTUBE)
+    assert tuple(rule.platform for rule in platforms.PLATFORM_RULES) == SUPPORTED_PLATFORMS
+
+
+def test_a_new_platform_needs_only_one_rule_table_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synthetic = PlatformRule(
+        platform="example",
+        capabilities=PlatformCapabilities(
+            has_platform_subtitles=False,
+            requires_login=False,
+            has_parts=False,
+            has_short_links=False,
+        ),
+        hosts=(
+            HostRule(
+                host="media.example",
+                forms=(
+                    UrlForm(
+                        path=re.compile(r"^/watch/(?P<id>[A-Za-z0-9]+)"),
+                        canonical="https://media.example/watch/{id}",
+                    ),
+                ),
+                unsupported_message="The example link does not point to a single video",
+            ),
+        ),
+    )
+    monkeypatch.setattr(platforms, "PLATFORM_RULES", (*platforms.PLATFORM_RULES, synthetic))
+
+    ref = parse_video_url("https://media.example/watch/abc123")
+
+    assert ref.platform == "example"
+    assert ref.video_id == "abc123"
+    assert ref.canonical_url == "https://media.example/watch/abc123"
+    with pytest.raises(UnsupportedUrlError):
+        parse_video_url("https://media.example/profile/abc123")
