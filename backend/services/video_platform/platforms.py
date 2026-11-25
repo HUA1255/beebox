@@ -22,6 +22,7 @@ from backend.services.video_platform.models import (
     PLATFORM_BILIBILI,
     PLATFORM_X,
     PLATFORM_YOUTUBE,
+    PLATFORM_ZHIHU,
 )
 
 
@@ -110,6 +111,10 @@ _X_POST_PATH = re.compile(r"^/(?P<user>[A-Za-z0-9_]+)/status/(?P<id>[0-9]+)/?$")
 # status links); none of them is a post to transcribe.
 _X_INTERNAL_PATH = re.compile(r"^/i(?:/|$)")
 _X_UNSUPPORTED_MESSAGE = "The X link does not point to a single post"
+
+# Zhihu's single videos are zvideo pages with a numeric id; answers, articles,
+# columns and questions are different pages and stay unsupported.
+_ZHIHU_VIDEO_PATH = re.compile(r"^/zvideo/(?P<id>[0-9]+)(?:/|$)")
 
 
 PLATFORM_RULES: tuple[PlatformRule, ...] = (
@@ -228,6 +233,29 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                 reject_path_message="X internal pages are not posts",
             )
             for host in ("x.com", "twitter.com")
+        ),
+    ),
+    PlatformRule(
+        platform=PLATFORM_ZHIHU,
+        capabilities=PlatformCapabilities(
+            # A zvideo page has no platform subtitle tracks: the job always
+            # transcribes the audio (ticket #30).
+            has_platform_subtitles=False,
+            requires_login=False,
+            has_parts=False,
+            has_short_links=False,
+        ),
+        hosts=(
+            HostRule(
+                host="zhihu.com",
+                forms=(
+                    UrlForm(
+                        path=_ZHIHU_VIDEO_PATH,
+                        canonical="https://www.zhihu.com/zvideo/{id}",
+                    ),
+                ),
+                unsupported_message="The Zhihu link does not point to a single zvideo",
+            ),
         ),
     ),
 )

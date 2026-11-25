@@ -17,8 +17,8 @@ subtitle (#42/#43)
 audio/ASR (#44)
     When no usable subtitle exists, or the caller sent ``options.prefer=asr``,
     only the audio stream is downloaded. A platform whose rule disables
-    platform subtitles (X, ticket #28) always takes this path, even when the
-    downloader reports tracks. The job is then re-routed through
+    platform subtitles (X and Zhihu, tickets #28/#30) always takes this path,
+    even when the downloader reports tracks. The job is then re-routed through
     :func:`backend.services.tasks.start_task_in_background`, which submits it
     to the normal GPU queue as an ordinary transcription; the downloaded audio
     is BeeBox-owned temporary media and ticket #40's completion cleanup drops
@@ -532,7 +532,7 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
 
     if not platform_subtitles:
         # Never consult the reported tracks: a platform without usable
-        # subtitles always transcribes its audio (ticket #28).
+        # subtitles always transcribes its audio (tickets #28, #30).
         task_logs.add_log(
             db,
             row.id,

@@ -17,6 +17,7 @@ from backend.services.video_platform import (
     PLATFORM_BILIBILI,
     PLATFORM_X,
     PLATFORM_YOUTUBE,
+    PLATFORM_ZHIHU,
     SUPPORTED_PLATFORMS,
     InvalidUrlError,
     UnsupportedUrlError,
@@ -196,8 +197,76 @@ def test_platform_capabilities_describe_what_each_platform_offers() -> None:
 
 
 def test_supported_platforms_are_derived_from_the_rule_table() -> None:
-    assert SUPPORTED_PLATFORMS == (PLATFORM_BILIBILI, PLATFORM_YOUTUBE, PLATFORM_X)
+    assert SUPPORTED_PLATFORMS == (
+        PLATFORM_BILIBILI,
+        PLATFORM_YOUTUBE,
+        PLATFORM_X,
+        PLATFORM_ZHIHU,
+    )
     assert tuple(rule.platform for rule in platforms.PLATFORM_RULES) == SUPPORTED_PLATFORMS
+
+
+# ---------------------------------------------------------------------------
+# Zhihu zvideo links (ticket #30)
+# ---------------------------------------------------------------------------
+
+
+def test_zhihu_zvideo_links_map_to_their_canonical_url() -> None:
+    ref = parse_video_url("https://www.zhihu.com/zvideo/1234567890123456789")
+
+    assert ref.platform == PLATFORM_ZHIHU
+    assert ref.video_id == "1234567890123456789"
+    assert ref.canonical_url == "https://www.zhihu.com/zvideo/1234567890123456789"
+    assert ref.original_url == "https://www.zhihu.com/zvideo/1234567890123456789"
+    assert ref.part is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://zhihu.com/zvideo/1234567890123456789",
+        "https://www.zhihu.com/zvideo/1234567890123456789/",
+        "https://www.zhihu.com/zvideo/1234567890123456789?share_code=abc",
+        "https://m.zhihu.com/zvideo/1234567890123456789",
+    ],
+)
+def test_zhihu_host_variants_share_one_canonical_url(url: str) -> None:
+    ref = parse_video_url(url)
+
+    assert ref.platform == PLATFORM_ZHIHU
+    assert ref.canonical_url == "https://www.zhihu.com/zvideo/1234567890123456789"
+    # The submitted link is never rewritten; it is result metadata.
+    assert ref.original_url == url
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.zhihu.com/question/12345678",
+        "https://www.zhihu.com/question/12345678/answer/87654321",
+        "https://www.zhihu.com/p/123456789",
+        "https://zhuanlan.zhihu.com/p/123456789",
+        "https://www.zhihu.com/column/c_123456789",
+        "https://www.zhihu.com/zvideo/",
+        "https://www.zhihu.com/zvideo/123abc",
+        "https://www.zhihu.com/video/1234567890123456789",
+        "https://www.zhihu.com/",
+    ],
+)
+def test_zhihu_pages_that_are_not_a_single_zvideo_are_unsupported(url: str) -> None:
+    with pytest.raises(UnsupportedUrlError) as error:
+        parse_video_url(url)
+    assert error.value.code == "UNSUPPORTED_URL"
+
+
+def test_zhihu_has_no_platform_subtitles_and_needs_no_login() -> None:
+    zhihu = platform_rule(PLATFORM_ZHIHU)
+
+    assert zhihu is not None
+    assert zhihu.capabilities.has_platform_subtitles is False
+    assert zhihu.capabilities.requires_login is False
+    assert zhihu.capabilities.has_parts is False
+    assert zhihu.capabilities.has_short_links is False
 
 
 def test_a_new_platform_needs_only_one_rule_table_entry(

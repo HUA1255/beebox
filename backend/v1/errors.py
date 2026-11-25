@@ -59,7 +59,8 @@ _HTTP_CODES: dict[str, tuple[int | None, str]] = {
     "INVALID_URL": (400, "The video link is not a valid absolute URL."),
     "UNSUPPORTED_URL": (
         400,
-        "The link is not a supported single video on Bilibili, YouTube or X "
+        "The link is not a supported single video on Bilibili, YouTube, X or "
+        "Zhihu "
         "(other hosts, playlists, collections and live streams are refused).",
     ),
     "MODEL_NOT_FOUND": (400, "The requested model is not present in the model registry."),

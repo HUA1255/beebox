@@ -192,9 +192,9 @@ class JobSourceRequest(BaseModel):
     url: str | None = Field(
         default=None,
         description=(
-            "Bilibili, YouTube or X single-post URL for type=url (ticket #42); "
-            "an X post is transcribed from its audio, so it never uses "
-            "platform subtitles"
+            "Bilibili, YouTube, X single-post or Zhihu video URL for type=url "
+            "(ticket #42); X posts and Zhihu zvideos are transcribed from "
+            "their audio, so they never use platform subtitles"
         ),
     )
 
@@ -210,7 +210,7 @@ class JobOptionsRequest(BaseModel):
         description=(
             "Restrict a video-link job to platform subtitles in this language "
             "(BCP-47 tag such as zh-Hans or en); no other language is used. "
-            "A platform without platform subtitles (X) fails with "
+            "A platform without platform subtitles (X, Zhihu) fails with "
             "VIDEO_SUBTITLE_UNAVAILABLE instead"
         ),
     )
@@ -242,8 +242,8 @@ class JobSourceInfo(BaseModel):
     url: str | None = Field(
         default=None,
         description=(
-            "Original video link for type=url (Bilibili, YouTube or X), kept "
-            "exactly as submitted"
+            "Original video link for type=url (Bilibili, YouTube, X or Zhihu), "
+            "kept exactly as submitted"
         ),
     )
     title: str | None = Field(default=None, description="Video title for type=url")
@@ -251,8 +251,8 @@ class JobSourceInfo(BaseModel):
     platform: str | None = Field(
         default=None,
         description=(
-            "Source platform for type=url (bilibili, youtube or x); null for "
-            "file sources and when a direct source names none"
+            "Source platform for type=url (bilibili, youtube, x or zhihu); null "
+            "for file sources and when a direct source names none"
         ),
     )
     page_url: str | None = Field(
