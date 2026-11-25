@@ -623,7 +623,7 @@
                 "type": "null"
               }
             ],
-            "description": "Restrict a video-link job to platform subtitles in this language (BCP-47 tag such as zh-Hans or en); no other language is used",
+            "description": "Restrict a video-link job to platform subtitles in this language (BCP-47 tag such as zh-Hans or en); no other language is used. A platform without platform subtitles (X) fails with VIDEO_SUBTITLE_UNAVAILABLE instead",
             "title": "Subtitle Language"
           }
         },
@@ -909,7 +909,7 @@
                 "type": "null"
               }
             ],
-            "description": "Source platform for type=url (bilibili or youtube); null for file sources and when a direct source names none",
+            "description": "Source platform for type=url (bilibili, youtube or x); null for file sources and when a direct source names none",
             "title": "Platform"
           },
           "subtitle_language": {
@@ -955,7 +955,7 @@
                 "type": "null"
               }
             ],
-            "description": "Original video link for type=url",
+            "description": "Original video link for type=url (Bilibili, YouTube or X), kept exactly as submitted",
             "title": "Url"
           }
         },
@@ -994,7 +994,7 @@
                 "type": "null"
               }
             ],
-            "description": "Bilibili or YouTube video URL for type=url (ticket #42)",
+            "description": "Bilibili, YouTube or X single-post URL for type=url (ticket #42); an X post is transcribed from its audio, so it never uses platform subtitles",
             "title": "Url"
           }
         },
