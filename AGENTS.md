@@ -1,6 +1,6 @@
 # BeeBox
 
-BeeBox 是家里的语音 AI 服务：在 Windows 11 GPU 主机上原生运行，只通过 `/v1` 接口向调用方（Beer 的家里服务、脚本、agent、控制台）提供转写等语音能力，单用户自用。没有面向终端用户的工作台；转写稿产出后不再修改，LLM 类文本加工由调用方负责。定位与边界见 ADR-0008。
+BeeBox 是家里的语音 AI 服务：在 Windows 11 GPU 主机上原生运行，只通过 `/v1` 接口向调用方（Beer 的家里服务、脚本、agent、控制台）提供转写等语音能力，单用户自用。没有面向终端用户的工作台；转写稿产出后不再修改，LLM 类文本加工不在 BeeBox，由内容节点负责。定位与边界见 ADR-0008、ADR-0014。
 
 **本文件是仓库唯一的 agent 规范入口。** `CLAUDE.md` 只引用本文件。不要再引入第二套规格文本或工具专属规范；约束以 ADR、契约测试和 GitHub issue 为准（见 ADR-0013）。
 
@@ -9,7 +9,7 @@ BeeBox 是家里的语音 AI 服务：在 Windows 11 GPU 主机上原生运行�
 1. 如果仓库根目录存在 `AGENTS.local.md`（本机私有说明，不提交），先读它 —— 它补充本机约束，但不能放宽本文件的隐私和推送规则。
 2. 当前 GitHub issue 的 Acceptance criteria —— 本次改动的规格。
 3. `GLOSSARY.md` —— 领域术语。写 issue、测试名与提交信息时使用其中定义的词，不要使用 `_Avoid_` 列出的同义词。
-4. `docs/adr/` —— 与本区域相关的决策。当前有效的是 0007–0013：
+4. `docs/adr/` —— 与本区域相关的决策。当前有效的是 0007–0014：
    - 0007 句子级分段与段落契约
    - 0008 BeeBox 只提供 `/v1` 接口
    - 0009 统一任务资源与 GPU 队列
@@ -17,6 +17,7 @@ BeeBox 是家里的语音 AI 服务：在 Windows 11 GPU 主机上原生运行�
    - 0011 局域网 token 与媒体保留期
    - 0012 B 站扫码登录与自动续期
    - 0013 本套规范（AGENTS.md 为唯一入口）
+   - 0014 图文采集与 LLM 加工交给独立的内容节点；BeeBox 新增媒体直链
    更早的 0002、0003、0004、0006 已被取代，读到时只看其替代关系。
 5. `docs/agents/issue-tracker.md`（issue 与依赖）、`docs/agents/triage-labels.md`（标签）、`docs/agents/domain.md`（如何消费术语表与 ADR）。
 
