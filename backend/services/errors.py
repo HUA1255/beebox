@@ -21,6 +21,10 @@ ERROR_CODES: dict[str, str] = {
     "DIARIZATION_FAILED": "Speaker diarization failed to label the transcript.",
     "TASK_CANCELLED": "The task was cancelled.",
     "INVALID_URL": "The video link is not a valid absolute URL.",
+    "DIRECT_URL_NOT_ALLOWED": (
+        "The direct media link resolves to a non-public address, or answers "
+        "with a redirect; it is refused before any follow-up request."
+    ),
     "UNSUPPORTED_URL": (
         "The link is not a supported single video on Bilibili, YouTube, X or "
         "Zhihu "

@@ -182,8 +182,11 @@ def _create_row(
     return row
 
 
-def _requested_options(options: dict[str, Any] | None) -> dict[str, Any]:
-    """Keep the contract fields that the ASR branch needs, nothing else."""
+def requested_asr_options(options: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep the contract fields that the ASR branch needs, nothing else.
+
+    Shared with the direct media source (#32), which joins the same ASR path.
+    """
     requested = options if isinstance(options, dict) else {}
     kept: dict[str, Any] = {}
     for key in ("prefer", "language", "model", "num_speakers", "diarization"):
@@ -215,7 +218,7 @@ def create_video_job(
     speakers, diarization) the ASR branch needs.
     """
     value = (url or "").strip()
-    request = _requested_options(options)
+    request = requested_asr_options(options)
     ref = parse_video_url(value)
 
     source = {
@@ -297,7 +300,11 @@ def _store_metadata(
     )
 
 
-def _asr_model_name(db: Session, request: dict[str, Any]) -> str:
+def resolve_asr_model_name(db: Session, request: dict[str, Any]) -> str:
+    """The model an ASR job will run; an unknown model fails before download.
+
+    Shared with the direct media source (#32) so both link types behave alike.
+    """
     requested = request.get("model")
     settings = settings_service.get_settings(db)
     name = str(requested or settings.default_model_name or config.DEFAULT_LOCAL_MODEL_NAME)
@@ -320,7 +327,7 @@ def _download_audio(
     destination = config.get_uploads_dir() / f"{row.id}.wav"
     request = _request(options)
     # Resolve the model before spending a download on a job that cannot run.
-    model_name = _asr_model_name(db, request)
+    model_name = resolve_asr_model_name(db, request)
     task_logs.add_log(
         db,
         row.id,
@@ -658,7 +665,11 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     return False
 
 
-def _record_failure(db: Session, job_id: str, exc: BaseException) -> None:
+def record_job_failure(db: Session, job_id: str, exc: BaseException) -> None:
+    """Persist a failed link job: status, error code, diagnostic, log, event.
+
+    Shared with the direct media source (#32) so both link types fail alike.
+    """
     try:
         db.rollback()
         fresh = task_service.get_task_row(db, job_id)
@@ -704,7 +715,7 @@ def _hand_off_to_gpu_queue(job_id: str) -> None:
         logger.exception("Failed to hand video job %s to the GPU queue", job_id)
         db = db_session.SessionLocal()
         try:
-            _record_failure(db, job_id, exc)
+            record_job_failure(db, job_id, exc)
         finally:
             db.close()
 
@@ -725,7 +736,7 @@ def execute_video_job(job_id: str) -> None:
         task_runtime.mark_running(job_id)
         handoff = _run_video_job(db, row)
     except Exception as exc:
-        _record_failure(db, job_id, exc)
+        record_job_failure(db, job_id, exc)
     finally:
         try:
             db.close()
@@ -746,5 +757,8 @@ __all__ = [
     "execute_video_job",
     "is_audio_video_job",
     "is_video_job",
+    "record_job_failure",
+    "requested_asr_options",
+    "resolve_asr_model_name",
     "runs_outside_gpu_queue",
 ]

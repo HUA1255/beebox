@@ -79,6 +79,11 @@ NON_RETRYABLE_ERROR_CODES = frozenset(
         # A malformed or unsupported link is not fixed by retrying it.
         "INVALID_URL",
         "UNSUPPORTED_URL",
+        # Ticket #32: a non-public direct target and a redirect refusal are
+        # policy decisions; a retry would send the same request again. An
+        # oversized response is the caller's file, not a transient failure.
+        "DIRECT_URL_NOT_ALLOWED",
+        "FILE_TOO_LARGE",
         # Ticket #44 turns a subtitle-less video into the audio/ASR path; a
         # caller-specified language with no matching track cannot succeed on
         # retry either.

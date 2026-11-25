@@ -187,7 +187,10 @@ class YouTubeCookieStatus(BaseModel):
 
 
 class JobSourceRequest(BaseModel):
-    type: str = Field(default="file", description="Source type: file or url")
+    type: str = Field(
+        default="file",
+        description="Source type: file, url or direct",
+    )
     file_id: str | None = Field(default=None, description="Uploaded file id for type=file")
     url: str | None = Field(
         default=None,
@@ -196,8 +199,25 @@ class JobSourceRequest(BaseModel):
             "(ticket #42); X posts and Zhihu zvideos are transcribed from "
             "their audio, so they never use platform subtitles. An X post's "
             "https://t.co/<token> short link is accepted offline and expanded "
-            "when the job starts"
+            "when the job starts. Or an absolute http(s) audio/video file URL "
+            "for type=direct (ticket #32)"
         ),
+    )
+    title: str | None = Field(
+        default=None,
+        description="Media title for type=direct; copied verbatim into the result",
+    )
+    author: str | None = Field(
+        default=None,
+        description="Media author for type=direct; copied verbatim into the result",
+    )
+    platform: str | None = Field(
+        default=None,
+        description="Platform name for type=direct; copied verbatim into the result",
+    )
+    page_url: str | None = Field(
+        default=None,
+        description="Page the direct media came from; copied verbatim into the result",
     )
 
 
@@ -246,11 +266,12 @@ class JobSourceInfo(BaseModel):
         description=(
             "Original video link for type=url (Bilibili, YouTube, X or Zhihu), "
             "kept exactly as submitted; a t.co short link stays the submitted "
-            "short link after the job expands it"
+            "short link after the job expands it. The submitted media URL for "
+            "type=direct"
         ),
     )
-    title: str | None = Field(default=None, description="Video title for type=url")
-    author: str | None = Field(default=None, description="Video author/uploader for type=url")
+    title: str | None = Field(default=None, description="Media title, when the source names one")
+    author: str | None = Field(default=None, description="Media author, when the source names one")
     platform: str | None = Field(
         default=None,
         description=(

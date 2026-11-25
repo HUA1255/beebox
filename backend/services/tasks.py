@@ -432,7 +432,8 @@ def start_task_in_background(task_id: str) -> None:
     :mod:`backend.services.gpu_queue`. Video jobs resolve metadata first and
     run outside the graphics-card slot; a platform-subtitle job finishes
     there (ticket #42) while an audio/ASR job re-enters here as an ordinary
-    GPU-queued transcription (ticket #44).
+    GPU-queued transcription (ticket #44). A direct media job downloads and
+    validates its link the same way before it joins the queue (ticket #32).
     """
     db_session.init_db()
     db = db_session.SessionLocal()
@@ -440,11 +441,20 @@ def start_task_in_background(task_id: str) -> None:
         row = get_task_row(db, task_id)
         if row is None:
             return
-        from backend.services import video_jobs
+        from backend.services import direct_media, video_jobs
 
+        # Video and direct-media jobs resolve/download outside the GPU slot.
+        # A direct job re-enters here once its media is ASR-ready, so the
+        # GPU queue then owns it like any other transcription (#32).
         if video_jobs.runs_outside_gpu_queue(row):
+            executor = video_jobs.execute_video_job
+        elif direct_media.runs_outside_gpu_queue(row):
+            executor = direct_media.execute_direct_job
+        else:
+            executor = None
+        if executor is not None:
             task_runtime.mark_queued(task_id)
-            gpu_queue.submit_without_gpu(task_id, executor=video_jobs.execute_video_job)
+            gpu_queue.submit_without_gpu(task_id, executor=executor)
             return
         # Keep the worker threads warm here as well: the queue service starts
         # them on dispatch, but /tasks/active must already report a worker.
