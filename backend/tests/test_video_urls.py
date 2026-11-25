@@ -15,6 +15,7 @@ import pytest
 
 from backend.services.video_platform import (
     PLATFORM_BILIBILI,
+    PLATFORM_X,
     PLATFORM_YOUTUBE,
     SUPPORTED_PLATFORMS,
     InvalidUrlError,
@@ -195,7 +196,7 @@ def test_platform_capabilities_describe_what_each_platform_offers() -> None:
 
 
 def test_supported_platforms_are_derived_from_the_rule_table() -> None:
-    assert SUPPORTED_PLATFORMS == (PLATFORM_BILIBILI, PLATFORM_YOUTUBE)
+    assert SUPPORTED_PLATFORMS == (PLATFORM_BILIBILI, PLATFORM_YOUTUBE, PLATFORM_X)
     assert tuple(rule.platform for rule in platforms.PLATFORM_RULES) == SUPPORTED_PLATFORMS
 
 
