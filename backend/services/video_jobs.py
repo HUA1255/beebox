@@ -16,7 +16,9 @@ subtitle (#42/#43)
     conversion, and the text source distinguishes manual from automatic.
 audio/ASR (#44)
     When no usable subtitle exists, or the caller sent ``options.prefer=asr``,
-    only the audio stream is downloaded. The job is then re-routed through
+    only the audio stream is downloaded. A platform whose rule table entry
+    offers no platform subtitles (Zhihu, ticket #30) always takes this path,
+    even when the downloader reports tracks. The job is then re-routed through
     :func:`backend.services.tasks.start_task_in_background`, which submits it
     to the normal GPU queue as an ordinary transcription; the downloaded audio
     is BeeBox-owned temporary media and ticket #40's completion cleanup drops
@@ -70,6 +72,7 @@ from backend.services.video_platform import (
     download_options,
     get_video_platform,
     parse_video_url,
+    platform_rule,
 )
 from backend.utils.events import event_bus
 from backend.utils.transcript_text import transcript_text_from_segments
@@ -478,6 +481,19 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
     # timeout reach metadata, subtitle and audio calls alike.
     download = download_options()
     prefer_asr = str(request.get("prefer") or "").strip().lower() == PREFER_ASR
+    rule = platform_rule(ref.platform)
+    # A platform whose rule table entry offers no platform subtitles (Zhihu)
+    # always takes the audio/ASR path; its metadata may still report tracks.
+    platform_subtitles = rule is None or rule.capabilities.has_platform_subtitles
+    subtitle_language = options.get("subtitle_language")
+    requested_language = subtitle_language if isinstance(subtitle_language, str) else None
+    if not platform_subtitles and requested_language:
+        # No track can ever satisfy the request, so it must not fall back to
+        # ASR either.
+        raise SubtitleUnavailableError(
+            f"The {ref.platform} platform offers no platform subtitles, so "
+            f"subtitle_language={requested_language!r} cannot be satisfied"
+        )
     # Fail before any network call: an unavailable login is a persistent,
     # caller-fixable condition, not something to discover halfway through.
     _require_bilibili_login(db, row, ref=ref, prefer_asr=prefer_asr)
@@ -496,8 +512,20 @@ def _run_video_job(db: Session, row: TranscriptionTask) -> bool:
 
     _store_metadata(db, row, options, source, ref=ref, info=info)
 
-    subtitle_language = options.get("subtitle_language")
-    requested_language = subtitle_language if isinstance(subtitle_language, str) else None
+    if not platform_subtitles:
+        task_logs.add_log(
+            db,
+            row.id,
+            "video",
+            "info",
+            "The platform offers no platform subtitles; using speech recognition",
+            {"platform": ref.platform},
+        )
+        _download_audio(
+            db, row, options, source, platform=platform, ref=ref, download=download
+        )
+        return True
+
     decision = decide_subtitle(
         info,
         subtitle_language=requested_language,
