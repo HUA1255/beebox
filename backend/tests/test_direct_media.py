@@ -656,6 +656,83 @@ def test_a_connection_reset_from_the_requests_body_becomes_a_transport_error() -
         list(adapter.iter_bytes())
 
 
+class _FakeRequestsSession:
+    """Stands in for requests.Session so the production transport is offline."""
+
+    def __init__(self) -> None:
+        self.trust_env = True
+        self.closed = False
+        self.url: str | None = None
+        self.kwargs: dict | None = None
+        self.response = _FakeRequestsStream()
+
+    def get(self, url: str, **kwargs):
+        self.url = url
+        self.kwargs = kwargs
+        if "trust_env" in kwargs:
+            # requests.Session.request() does not accept this keyword; the
+            # production failure it used to cause is what this test pins.
+            raise TypeError(
+                "Session.request() got an unexpected keyword argument 'trust_env'"
+            )
+        return self.response
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeRequestsStream:
+    status_code = 200
+    headers = {"Content-Type": "audio/mpeg"}
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def iter_content(self, chunk_size: int):
+        yield b"media-bytes"
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_the_production_transport_sets_trust_env_on_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.services import direct_media
+
+    session = _FakeRequestsSession()
+    monkeypatch.setattr(direct_media.requests, "Session", lambda: session)
+    monkeypatch.setattr(
+        direct_media.requests,
+        "get",
+        lambda *args, **kwargs: pytest.fail(
+            "requests.get cannot carry trust_env; use a Session"
+        ),
+    )
+
+    transport = direct_media.RequestsHttpTransport(proxy="http://127.0.0.1:3128")
+    response = transport.get("https://media.example/clip.mp3", timeout=7)
+
+    assert session.url == "https://media.example/clip.mp3"
+    assert session.trust_env is False
+    assert session.kwargs == {
+        "stream": True,
+        "allow_redirects": False,
+        "timeout": 7,
+        "proxies": {
+            "http": "http://127.0.0.1:3128",
+            "https": "http://127.0.0.1:3128",
+        },
+    }
+    assert list(response.iter_bytes()) == [b"media-bytes"]
+
+    response.close()
+
+    assert session.response.closed is True
+    assert session.closed is True
+
+
+
 class _BodyErrorResponse(FakeHttpResponse):
     """A scripted response that fails after the first body chunk."""
 

@@ -156,8 +156,9 @@ class HttpTransport(Protocol):
 class _RequestsResponse:
     """Adapt a streamed :class:`requests.Response` to :class:`HttpResponse`."""
 
-    def __init__(self, response: requests.Response) -> None:
+    def __init__(self, response: requests.Response, session=None) -> None:
         self._response = response
+        self._session = session
         self.status_code = response.status_code
         self.headers = response.headers
 
@@ -173,7 +174,11 @@ class _RequestsResponse:
             raise HttpTransportError("The direct media download failed") from exc
 
     def close(self) -> None:
-        self._response.close()
+        try:
+            self._response.close()
+        finally:
+            if self._session is not None:
+                self._session.close()
 
 
 class RequestsHttpTransport:
@@ -184,22 +189,30 @@ class RequestsHttpTransport:
 
     def get(self, url: str, *, timeout: float) -> HttpResponse:
         proxies = {"http": self._proxy, "https": self._proxy} if self._proxy else None
+        # ``trust_env`` is a Session attribute, not a request keyword: passing
+        # it to ``requests.get`` reaches Session.request() and raises TypeError
+        # in production (the fake transport cannot catch that). Keep the
+        # session alive for the streamed body and close it with the response.
+        session = requests.Session()
+        session.trust_env = False
         try:
-            response = requests.get(
+            response = session.get(
                 url,
                 stream=True,
                 allow_redirects=False,
                 timeout=timeout,
                 proxies=proxies,
-                # Only BEEBOX_DOWNLOAD_PROXY decides a proxy, matching the
-                # video platform boundary; ambient HTTP(S)_PROXY is ignored.
-                trust_env=False,
             )
         except requests.Timeout as exc:
+            session.close()
             raise HttpTimeout("The direct media request timed out") from exc
         except requests.RequestException as exc:
+            session.close()
             raise HttpTransportError("The direct media request failed") from exc
-        return _RequestsResponse(response)
+        except BaseException:
+            session.close()
+            raise
+        return _RequestsResponse(response, session)
 
 
 def resolve_host(host: str, port: int) -> tuple[str, ...]:
