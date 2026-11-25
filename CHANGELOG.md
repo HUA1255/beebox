@@ -6,6 +6,7 @@ All notable BeeBox changes are documented here. The format follows Keep a Change
 
 ### Added
 
+- 新增 `backend/tests/test_version_consistency.py`：逐个解析版本号所在位置（`pyproject.toml`、`backend/__init__.py`、`uv.lock`、`openapi.json`、后端与 console e2e 的版本断言、README 中英文徽章与 tag 示例、`deploy/windows` 的 tag 示例、`CHANGELOG.md` 的最新版本标题与链接），任何一处与 `pyproject.toml` 不一致都会失败并列出文件名；`console/package-lock.json` 里的依赖版本和 `docs/history.md` 的历史记录明确排除（refs #13）。
 - 上线后验收工具 `deploy/windows/verify-url-job.ps1`：从受 ACL 保护的生产 `settings.env` 读取 Bearer token，提交一条真实视频链接任务并轮询到终态，只输出 job 状态、`error_code`、`text_source` 与段落/字符/分段计数；token、转写稿内容和提交的 URL 都不回显，`succeeded` 退出码 0，其余为 1。新增 `test-verify-url-job.ps1`，用回环假 `/v1` 服务器检查提交、轮询、汇总和退出码，不提交真实任务（refs #12）。
 
 ### Fixed
