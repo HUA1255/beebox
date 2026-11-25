@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 
 PLATFORM_BILIBILI = "bilibili"
 PLATFORM_YOUTUBE = "youtube"
-SUPPORTED_PLATFORMS = (PLATFORM_BILIBILI, PLATFORM_YOUTUBE)
+# X single posts and Zhihu zvideos are transcribed from their audio (tickets
+# #28, #30).
+PLATFORM_X = "x"
+PLATFORM_ZHIHU = "zhihu"
+# ``SUPPORTED_PLATFORMS`` is derived from the platform rule table; import it
+# from :mod:`backend.services.video_platform.platforms` (or the package).
 
 TRACK_KIND_MANUAL = "manual"
 TRACK_KIND_AUTO = "auto"
@@ -32,6 +37,9 @@ class VideoRef:
     ``part`` is the Bilibili multi-part index (``?p=N``), defaulting to 1; it
     stays ``None`` for platforms without the concept. ``canonical_url`` points
     at exactly that part so a download never covers the whole list.
+    ``short_link`` marks a link whose target is unknown offline (a t.co short
+    link): the job expands it at task start, before any metadata or media
+    request, instead of trusting ``video_id`` still to be an opaque token.
     """
 
     platform: str
@@ -39,6 +47,7 @@ class VideoRef:
     canonical_url: str
     original_url: str
     part: int | None = None
+    short_link: bool = False
 
 
 @dataclass(frozen=True)
@@ -122,8 +131,9 @@ __all__ = [
     "LOGIN_UNKNOWN",
     "LOGIN_VALID",
     "PLATFORM_BILIBILI",
+    "PLATFORM_X",
     "PLATFORM_YOUTUBE",
-    "SUPPORTED_PLATFORMS",
+    "PLATFORM_ZHIHU",
     "TEXT_SOURCE_ASR",
     "TEXT_SOURCE_AUTO",
     "TEXT_SOURCE_MANUAL",

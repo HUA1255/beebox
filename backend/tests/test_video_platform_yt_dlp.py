@@ -117,6 +117,17 @@ def returning(payload: dict) -> type:
             LoginRequiredError,
             "VIDEO_LOGIN_REQUIRED",
         ),
+        # Spec #18: a protected post or a blocked request needs a login, not a
+        # "video is gone" verdict.
+        ("This post is protected", LoginRequiredError, "VIDEO_LOGIN_REQUIRED"),
+        (
+            "You are not authorized to view this media",
+            LoginRequiredError,
+            "VIDEO_LOGIN_REQUIRED",
+        ),
+        ("Unauthorized", LoginRequiredError, "VIDEO_LOGIN_REQUIRED"),
+        ("HTTP Error 401: Unauthorized", LoginRequiredError, "VIDEO_LOGIN_REQUIRED"),
+        ("This content is blocked in your country", LoginRequiredError, "VIDEO_LOGIN_REQUIRED"),
         ("This video is private", VideoUnavailableError, "VIDEO_NOT_ACCESSIBLE"),
         (
             "Video unavailable. This video is not available in your country",
@@ -125,6 +136,11 @@ def returning(payload: dict) -> type:
         ),
         (
             "This video is available to this channel's members only",
+            VideoUnavailableError,
+            "VIDEO_NOT_ACCESSIBLE",
+        ),
+        (
+            "This video has been removed by the uploader",
             VideoUnavailableError,
             "VIDEO_NOT_ACCESSIBLE",
         ),
@@ -389,7 +405,7 @@ def test_yt_dlp_audio_download_receives_the_proxy(
     assert destination.read_bytes() == b"RIFFfake"
     [instance] = ScriptedYoutubeDL.instances
     assert instance.options["proxy"] == "http://127.0.0.1:3128"
-    assert instance.options["format"] == "bestaudio"
+    assert instance.options["format"] == "bestaudio/best"
     assert instance.options["playlist_items"] == "2"
 
 

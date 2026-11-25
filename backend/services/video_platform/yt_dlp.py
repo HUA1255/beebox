@@ -51,6 +51,7 @@ from backend.services.video_platform.models import (
     VideoInfo,
     VideoRef,
 )
+from backend.services.video_platform.platforms import platform_rule
 from backend.services.video_platform.subtitles import parse_subtitle
 from backend.services.video_platform.youtube import apply_youtube_options
 
@@ -226,6 +227,13 @@ def _classify_download_error(
             "age restricted",
             "confirm your age",
             "inappropriate for some users",
+            # Spec #18: a protected post or a request the platform blocked is
+            # answered with a sign-in, not with a "this video is gone" verdict.
+            "protected",
+            "not authorized",
+            "unauthorized",
+            "http error 401",
+            "blocked",
             "登录",
             "需要登录",
         )
@@ -379,11 +387,11 @@ class YtDlpVideoPlatform:
             platform_options.update(
                 {
                     "skip_download": False,
-                    # Ticket #44 downloads audio only: never fetch a video
-                    # stream. When a platform offers no audio-only format the
-                    # download fails loudly instead of silently pulling the
-                    # muxed video stream.
-                    "format": "bestaudio",
+                    # Ticket #44 prefers audio only, but some supported
+                    # platforms publish only muxed files (Zhihu zvideo, ticket
+                    # #30). Prefer an audio-only stream and fall back to the
+                    # best muxed format; FFmpegExtractAudio extracts its audio.
+                    "format": "bestaudio/best",
                     "outtmpl": output_template,
                     # Ticket #85: the base session lists subtitles for
                     # metadata, but the audio temp directory must not collect
@@ -450,12 +458,18 @@ class YtDlpVideoPlatform:
         return None
 
     def _select_part(self, info: dict, ref: VideoRef) -> tuple[dict, str | None]:
-        """Narrow a Bilibili multi-video playlist to the requested part."""
+        """Narrow a multi-video playlist to the requested part.
+
+        Only a platform whose rule declares ``has_parts`` may return a list of
+        videos; for every other platform a list result is an unsupported
+        playlist.
+        """
         entries = info.get("entries")
         is_multi = info.get("_type") in {"playlist", "multi_video"} or bool(entries)
         if not is_multi:
             return info, self._part_title(info)
-        if ref.platform != PLATFORM_BILIBILI:
+        rule = platform_rule(ref.platform)
+        if rule is None or not rule.capabilities.has_parts:
             raise UnsupportedUrlError("Playlist links are not supported")
         selected = [entry for entry in entries or [] if isinstance(entry, dict)]
         if not selected:
@@ -507,10 +521,16 @@ class YtDlpVideoPlatform:
 
     @staticmethod
     def _with_part(options: dict, ref: VideoRef) -> dict:
-        # Tell yt-dlp which page of a Bilibili multi-video list to take; the
+        # Tell yt-dlp which page of a multi-part video list to take; the
         # canonical URL also carries ?p=N, but yt-dlp may still return the
-        # whole list.
-        if ref.platform == PLATFORM_BILIBILI and ref.part and ref.part > 1:
+        # whole list. Only a platform whose rule declares parts has one.
+        rule = platform_rule(ref.platform)
+        if (
+            rule is not None
+            and rule.capabilities.has_parts
+            and ref.part
+            and ref.part > 1
+        ):
             options["playlist_items"] = str(ref.part)
         return options
 

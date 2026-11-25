@@ -1,6 +1,7 @@
 """The video platform boundary (ticket #42).
 
-Everything that talks to Bilibili or YouTube goes through this package:
+Everything that talks to a supported video platform (Bilibili, YouTube, X or
+Zhihu) goes through this package:
 recognizing a link, fetching video metadata and the subtitle track list,
 downloading one subtitle track, downloading only the audio stream (ticket
 #44) and checking login state (tickets #46/#47).
@@ -56,8 +57,9 @@ from backend.services.video_platform.models import (
     LOGIN_UNKNOWN,
     LOGIN_VALID,
     PLATFORM_BILIBILI,
+    PLATFORM_X,
     PLATFORM_YOUTUBE,
-    SUPPORTED_PLATFORMS,
+    PLATFORM_ZHIHU,
     TEXT_SOURCE_ASR,
     TEXT_SOURCE_AUTO,
     TEXT_SOURCE_MANUAL,
@@ -71,6 +73,13 @@ from backend.services.video_platform.models import (
     VideoInfo,
     VideoRef,
 )
+from backend.services.video_platform.platforms import (
+    PLATFORM_RULES,
+    SUPPORTED_PLATFORMS,
+    PlatformCapabilities,
+    PlatformRule,
+    platform_rule,
+)
 from backend.services.video_platform.subtitles import SUPPORTED_SUBTITLE_FORMATS, parse_subtitle
 from backend.services.video_platform.selection import (
     REASON_AUTO_CHINESE,
@@ -83,6 +92,7 @@ from backend.services.video_platform.selection import (
     REASON_PREFER_ASR,
     REASON_SUBTITLE_LANGUAGE_UNAVAILABLE,
     TEXT_PATH_ASR,
+    TEXT_PATH_DOWNLOAD,
     TEXT_PATH_SUBTITLE,
     SubtitleDecision,
     decide_subtitle,
@@ -170,7 +180,12 @@ __all__ = [
     "LOGIN_VALID",
     "PLATFORM_BILIBILI",
     "PLATFORM_REAL",
+    "PLATFORM_RULES",
+    "PLATFORM_X",
     "PLATFORM_YOUTUBE",
+    "PLATFORM_ZHIHU",
+    "PlatformCapabilities",
+    "PlatformRule",
     "REASON_AUTO_CHINESE",
     "REASON_AUTO_ORIGINAL",
     "REASON_AUTO_REQUESTED",
@@ -183,6 +198,7 @@ __all__ = [
     "SUPPORTED_PLATFORMS",
     "SUPPORTED_SUBTITLE_FORMATS",
     "TEXT_PATH_ASR",
+    "TEXT_PATH_DOWNLOAD",
     "TEXT_PATH_SUBTITLE",
     "TEXT_SOURCE_ASR",
     "TEXT_SOURCE_AUTO",
@@ -218,6 +234,7 @@ __all__ = [
     "get_video_platform",
     "parse_subtitle",
     "parse_video_url",
+    "platform_rule",
     "video_platform_name",
     "yt_dlp_version",
 ]

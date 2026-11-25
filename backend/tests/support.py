@@ -45,6 +45,57 @@ def fake_speech_env(monkeypatch, **config: Any) -> None:
     monkeypatch.setenv("BEEBOX_SPEECH_FAKE_RESULT", json.dumps(fake_speech_payload(**config), ensure_ascii=False))
 
 
+class FakeHttpResponse:
+    """A scripted HTTP response for the direct-media transport seam."""
+
+    def __init__(
+        self,
+        status_code: int = 200,
+        *,
+        headers: dict[str, str] | None = None,
+        chunks: tuple[bytes, ...] = (),
+    ) -> None:
+        self.status_code = status_code
+        self.headers = dict(headers or {})
+        self.chunks = tuple(chunks)
+        self.bytes_read = 0
+        self.closed = False
+
+    def iter_bytes(self):
+        for chunk in self.chunks:
+            self.bytes_read += len(chunk)
+            yield chunk
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeHttpTransport:
+    """The injectable HTTP transport: queues responses and records requests.
+
+    An entry may be a response, an exception instance (raised for that request)
+    or a callable taking the URL and returning one of those. No socket is ever
+    opened.
+    """
+
+    def __init__(self, *responses) -> None:
+        self.responses = list(responses)
+        self.requests: list[dict[str, Any]] = []
+        self.served: list[FakeHttpResponse] = []
+
+    def get(self, url: str, *, timeout: float):
+        self.requests.append({"url": url, "timeout": timeout})
+        if not self.responses:
+            raise AssertionError(f"unexpected HTTP request for {url}")
+        item = self.responses.pop(0)
+        if callable(item):
+            item = item(url)
+        if isinstance(item, BaseException):
+            raise item
+        self.served.append(item)
+        return item
+
+
 BILIBILI_COOKIE_FILENAME = "bilibili-cookies.txt"
 #: A valid-looking credential. It is a test sentinel, never a real one.
 BILIBILI_TEST_SESSDATA = "test-sessdata-value"

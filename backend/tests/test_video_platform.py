@@ -221,3 +221,24 @@ def test_yt_dlp_platform_classifies_failures_as_login_required_when_the_cookie_e
     assert isinstance(expired, LoginRequiredError)
     assert expired.code == "VIDEO_LOGIN_REQUIRED"
 
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "This post is protected",
+        "You are not authorized to view this media",
+        "Unauthorized",
+        "HTTP Error 401: Unauthorized",
+        "This content is blocked in your country",
+    ],
+)
+def test_protected_or_blocked_posts_are_login_required(message: str) -> None:
+    """Spec #18: a protected post is a login problem, not a missing video."""
+    from backend.services.video_platform.errors import LoginRequiredError
+    from backend.services.video_platform.yt_dlp import _classify_download_error
+
+    failure = _classify_download_error(RuntimeError(message))
+
+    assert isinstance(failure, LoginRequiredError)
+    assert failure.code == "VIDEO_LOGIN_REQUIRED"
+

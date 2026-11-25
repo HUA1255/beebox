@@ -349,6 +349,8 @@ def test_create_job_without_options_uses_server_defaults_and_runs(client: TestCl
         "url": None,
         "title": None,
         "author": None,
+        "platform": None,
+        "page_url": None,
         "part": None,
         "part_title": None,
         "subtitle_language": None,
@@ -630,6 +632,8 @@ def test_result_contains_text_segments_paragraphs_speakers_and_source(
     assert source["filename"] == "clip.wav"
     assert source["text_source"] == "asr"
     assert source["duration_ms"] == 1000
+    assert source["platform"] is None
+    assert source["page_url"] is None
 
 
 def test_exports_follow_the_paragraph_contract(

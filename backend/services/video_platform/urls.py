@@ -1,30 +1,25 @@
-"""Recognize the video links BeeBox accepts (tickets #42 and #45).
+"""Recognize the video links BeeBox accepts (tickets #27, #42 and #45).
 
-Only single videos on Bilibili and YouTube are supported. Recognition is pure
-and offline: the caller gets a :class:`VideoRef` or a typed
+Only single videos on the platforms listed in
+:data:`backend.services.video_platform.platforms.PLATFORM_RULES` are supported.
+Recognition is pure and offline: the caller gets a :class:`VideoRef` or a typed
 :class:`UnsupportedUrlError`/``InvalidUrlError`` without any network request.
-Playlists, collections and live streams are refused here, before any
-download; Bilibili multi-part links keep only the requested part (``?p=N``,
-part 1 when absent) so a job never turns into a list download.
+Playlists, collections and live streams are refused here, before any download;
+Bilibili multi-part links keep only the requested part (``?p=N``, part 1 when
+absent) so a job never turns into a list download.
+
+Platform knowledge (hosts, URL forms, canonical URLs, capabilities) lives in
+:mod:`backend.services.video_platform.platforms`; this module only validates
+the value, finds the rule for its host and applies the first matching form.
 """
 
 from __future__ import annotations
 
-import re
 from urllib.parse import parse_qs, urlsplit
 
+from backend.services.video_platform import platforms
 from backend.services.video_platform.errors import InvalidUrlError, UnsupportedUrlError
-from backend.services.video_platform.models import (
-    PLATFORM_BILIBILI,
-    PLATFORM_YOUTUBE,
-    SUPPORTED_PLATFORMS,
-    VideoRef,
-)
-
-_BILIBILI_VIDEO_PATH = re.compile(r"^/video/(?P<id>[A-Za-z0-9]+)")
-_BILIBILI_BANGUMI_PATH = re.compile(r"^/bangumi/play/(?P<id>[A-Za-z0-9]+)")
-_YOUTUBE_VIDEO_PATH = re.compile(r"^/(?:shorts|embed)/(?P<id>[A-Za-z0-9_-]+)")
-_YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+from backend.services.video_platform.models import VideoRef
 
 
 def _hostname(parts) -> str:
@@ -38,50 +33,101 @@ def _query(parts) -> dict[str, list[str]]:
     return parse_qs(parts.query or "", keep_blank_values=True)
 
 
-def _youtube_id(parts) -> str | None:
-    path = parts.path or ""
-    if path == "/live" or path.startswith("/live/"):
-        # A /live link is always a stream, even when it carries a video id.
-        raise UnsupportedUrlError("Live streams are not supported")
-    match = _YOUTUBE_VIDEO_PATH.match(path)
-    if match:
-        return match.group("id")
-    for value in _query(parts).get("v", []):
-        if value:
-            return value
+def _host_rule(rule: platforms.PlatformRule, host: str) -> platforms.HostRule | None:
+    for host_rule in rule.hosts:
+        if host == host_rule.host or host.endswith(f".{host_rule.host}"):
+            return host_rule
     return None
 
 
-def _reject_playlist(parts) -> None:
-    if "list" in _query(parts):
-        raise UnsupportedUrlError("Playlist links are not supported; submit a single video")
+def _form_groups(
+    form: platforms.UrlForm, path: str, query: dict[str, list[str]]
+) -> dict[str, str] | None:
+    """The named groups of the first matching form, with ``id`` resolved.
+
+    Every named group the path pattern captured is kept so a canonical
+    template can use it (an X post needs the account name as well as the id).
+    """
+    match = form.path.match(path)
+    if match is None:
+        return None
+    groups = {
+        key: value
+        for key, value in match.groupdict().items()
+        if isinstance(value, str)
+    }
+    value = groups.get("id")
+    if value is None and form.query_id is not None:
+        values = [item for item in query.get(form.query_id, []) if item]
+        value = values[0] if values else None
+        if value is not None:
+            groups["id"] = value
+    if value is None:
+        return None
+    if form.video_id_pattern is not None and not form.video_id_pattern.match(value):
+        return None
+    return groups
 
 
-def _bilibili_part(parts) -> int:
+def _form_part(form: platforms.UrlForm, query: dict[str, list[str]]) -> int:
     """The requested part index; absent or ``p=1`` means the first part."""
-    values = _query(parts).get("p")
+    values = query.get(form.part_query) if form.part_query else None
     if not values:
         return 1
     raw = (values[0] or "").strip()
     if not raw.isdigit() or int(raw) < 1:
-        raise UnsupportedUrlError(f"Invalid Bilibili part number: {raw!r}")
+        raise UnsupportedUrlError(form.part_error.format(value=raw))
     return int(raw)
 
 
-def _bilibili_ref(
-    url: str, *, video_id: str, part: int, canonical: str | None = None
+def _canonical_url(
+    form: platforms.UrlForm,
+    *,
+    groups: dict[str, str],
+    part: int | None,
+    original: str,
+) -> str:
+    if form.canonical is None:
+        return original
+    part_suffix = f"?p={part}" if form.part_query and part and part > 1 else ""
+    return form.canonical.format(part=part_suffix, **groups)
+
+
+def _parse_host(
+    rule: platforms.PlatformRule,
+    host_rule: platforms.HostRule,
+    *,
+    original: str,
+    path: str,
+    query: dict[str, list[str]],
 ) -> VideoRef:
-    if canonical is None:
-        canonical = f"https://www.bilibili.com/video/{video_id}"
-        if part > 1:
-            canonical = f"{canonical}?p={part}"
-    return VideoRef(
-        platform=PLATFORM_BILIBILI,
-        video_id=video_id,
-        canonical_url=canonical,
-        original_url=url,
-        part=part,
-    )
+    for key in rule.reject_query:
+        if key in query:
+            raise UnsupportedUrlError(
+                rule.reject_query_message or f"{key} links are not supported"
+            )
+    if host_rule.reject_path is not None and host_rule.reject_path.search(path):
+        raise UnsupportedUrlError(
+            host_rule.reject_path_message or "This link is not a single video"
+        )
+    for form in host_rule.forms:
+        groups = _form_groups(form, path, query)
+        if groups is None:
+            continue
+        part = _form_part(form, query) if form.part_query else None
+        return VideoRef(
+            platform=rule.platform,
+            video_id=groups["id"],
+            canonical_url=_canonical_url(
+                form, groups=groups, part=part, original=original
+            ),
+            original_url=original,
+            part=part,
+            # A short form is only a short link when the platform rule says the
+            # job has a way to expand one (ticket #29).
+            short_link=form.short_link and rule.capabilities.has_short_links,
+        )
+    raise UnsupportedUrlError(host_rule.unsupported_message)
 
 
 def parse_video_url(url: str) -> VideoRef:
@@ -101,69 +147,20 @@ def parse_video_url(url: str) -> VideoRef:
         raise InvalidUrlError(f"Not an absolute http(s) URL: {url!r}")
     host = _hostname(parts)
     path = parts.path or "/"
+    query = _query(parts)
 
-    if host == "b23.tv" or host.endswith(".b23.tv"):
-        video_id = path.strip("/").split("/", 1)[0]
-        if not video_id:
-            raise UnsupportedUrlError("The b23.tv link does not point to a video")
-        return _bilibili_ref(
-            original,
-            video_id=video_id,
-            part=_bilibili_part(parts),
-            canonical=original,
-        )
-
-    if host == "bilibili.com" or host.endswith(".bilibili.com"):
-        video_match = _BILIBILI_VIDEO_PATH.match(path)
-        if video_match:
-            return _bilibili_ref(
-                original,
-                video_id=video_match.group("id"),
-                part=_bilibili_part(parts),
-            )
-        bangumi_match = _BILIBILI_BANGUMI_PATH.match(path)
-        if bangumi_match:
-            return VideoRef(
-                platform=PLATFORM_BILIBILI,
-                video_id=bangumi_match.group("id"),
-                canonical_url=(
-                    f"https://www.bilibili.com/bangumi/play/{bangumi_match.group('id')}"
-                ),
-                original_url=original,
-            )
-        raise UnsupportedUrlError("The Bilibili link does not point to a single video")
-
-    if host == "youtu.be" or host.endswith(".youtu.be"):
-        _reject_playlist(parts)
-        video_id = path.strip("/").split("/", 1)[0]
-        if not video_id or not _YOUTUBE_ID.match(video_id):
-            raise UnsupportedUrlError("The youtu.be link does not point to a video")
-        return VideoRef(
-            platform=PLATFORM_YOUTUBE,
-            video_id=video_id,
-            canonical_url=f"https://www.youtube.com/watch?v={video_id}",
-            original_url=original,
-        )
-
-    if host == "youtube.com" or host.endswith(".youtube.com"):
-        _reject_playlist(parts)
-        video_id = _youtube_id(parts)
-        if not video_id or not _YOUTUBE_ID.match(video_id):
-            raise UnsupportedUrlError("The YouTube link does not point to a single video")
-        return VideoRef(
-            platform=PLATFORM_YOUTUBE,
-            video_id=video_id,
-            canonical_url=f"https://www.youtube.com/watch?v={video_id}",
-            original_url=original,
+    for rule in platforms.PLATFORM_RULES:
+        host_rule = _host_rule(rule, host)
+        if host_rule is None:
+            continue
+        return _parse_host(
+            rule, host_rule, original=original, path=path, query=query
         )
 
     raise UnsupportedUrlError(f"Unsupported video platform: {host}")
 
 
 __all__ = [
-    "PLATFORM_BILIBILI",
-    "PLATFORM_YOUTUBE",
-    "SUPPORTED_PLATFORMS",
     "VideoRef",
     "parse_video_url",
 ]

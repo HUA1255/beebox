@@ -623,7 +623,7 @@
                 "type": "null"
               }
             ],
-            "description": "Restrict a video-link job to platform subtitles in this language (BCP-47 tag such as zh-Hans or en); no other language is used",
+            "description": "Restrict a video-link job to platform subtitles in this language (BCP-47 tag such as zh-Hans or en); no other language is used. A platform without platform subtitles (X, Zhihu) fails with VIDEO_SUBTITLE_UNAVAILABLE instead",
             "title": "Subtitle Language"
           }
         },
@@ -817,7 +817,7 @@
                 "type": "null"
               }
             ],
-            "description": "Video author/uploader for type=url",
+            "description": "Media author, when the source names one",
             "title": "Author"
           },
           "duration_ms": {
@@ -864,6 +864,18 @@
             ],
             "title": "Language"
           },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page the media came from, for direct sources; null when the source itself is the page (file and video-link jobs)",
+            "title": "Page Url"
+          },
           "part": {
             "anyOf": [
               {
@@ -887,6 +899,18 @@
             ],
             "description": "Title of the selected Bilibili part, from platform metadata",
             "title": "Part Title"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source platform for type=url (bilibili, youtube, x or zhihu); null for file sources and when a direct source names none",
+            "title": "Platform"
           },
           "subtitle_language": {
             "anyOf": [
@@ -915,7 +939,7 @@
                 "type": "null"
               }
             ],
-            "description": "Video title for type=url",
+            "description": "Media title, when the source names one",
             "title": "Title"
           },
           "type": {
@@ -931,7 +955,7 @@
                 "type": "null"
               }
             ],
-            "description": "Original video link for type=url",
+            "description": "Original video link for type=url (Bilibili, YouTube, X or Zhihu), kept exactly as submitted; a t.co short link stays the submitted short link after the job expands it. The submitted media URL for type=direct",
             "title": "Url"
           }
         },
@@ -943,6 +967,18 @@
       },
       "JobSourceRequest": {
         "properties": {
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Media author for type=direct; copied verbatim into the result",
+            "title": "Author"
+          },
           "file_id": {
             "anyOf": [
               {
@@ -955,9 +991,45 @@
             "description": "Uploaded file id for type=file",
             "title": "File Id"
           },
+          "page_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Page the direct media came from; copied verbatim into the result",
+            "title": "Page Url"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Platform name for type=direct; copied verbatim into the result",
+            "title": "Platform"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Media title for type=direct; copied verbatim into the result",
+            "title": "Title"
+          },
           "type": {
             "default": "file",
-            "description": "Source type: file or url",
+            "description": "Source type: file, url or direct",
             "title": "Type",
             "type": "string"
           },
@@ -970,7 +1042,7 @@
                 "type": "null"
               }
             ],
-            "description": "Bilibili or YouTube video URL for type=url (ticket #42)",
+            "description": "Bilibili, YouTube, X single-post or Zhihu video URL for type=url (ticket #42); X posts and Zhihu zvideos are transcribed from their audio, so they never use platform subtitles. An X post's https://t.co/<token> short link is accepted offline and expanded when the job starts. Or an absolute http(s) audio/video file URL for type=direct (ticket #32)",
             "title": "Url"
           }
         },

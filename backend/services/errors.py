@@ -21,8 +21,15 @@ ERROR_CODES: dict[str, str] = {
     "DIARIZATION_FAILED": "Speaker diarization failed to label the transcript.",
     "TASK_CANCELLED": "The task was cancelled.",
     "INVALID_URL": "The video link is not a valid absolute URL.",
+    "DIRECT_URL_NOT_ALLOWED": (
+        "The direct media link, or one of its redirect hops, resolves to a "
+        "non-public address (loopback, private, link-local or reserved), or "
+        "the redirect chain is invalid (a missing or non-http(s) Location, "
+        "too many hops or a loop). A non-public hop is never requested."
+    ),
     "UNSUPPORTED_URL": (
-        "The link is not a supported single Bilibili or YouTube video "
+        "The link is not a supported single video on Bilibili, YouTube, X or "
+        "Zhihu "
         "(other hosts, playlists, collections and live streams are refused)."
     ),
     "VIDEO_NOT_ACCESSIBLE": (
