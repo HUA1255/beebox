@@ -81,10 +81,11 @@ NON_RETRYABLE_ERROR_CODES = frozenset(
         "UNSUPPORTED_URL",
         # Ticket #32/#33: a non-public direct target or redirect hop and an
         # invalid redirect chain (missing Location, too many hops, a loop) are
-        # policy decisions; a retry would send the same request again. An
-        # oversized response is the caller's file, not a transient failure.
+        # policy decisions; a retry would send the same request again.
         "DIRECT_URL_NOT_ALLOWED",
-        "FILE_TOO_LARGE",
+        # FILE_TOO_LARGE is deliberately retryable: the spec does not call an
+        # oversized response permanent, and a caller can retry with a smaller
+        # file or a direct link that now serves less data.
         # Ticket #44 turns a subtitle-less video into the audio/ASR path; a
         # caller-specified language with no matching track cannot succeed on
         # retry either.
