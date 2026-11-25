@@ -303,6 +303,27 @@ def create_job(request: JobCreateRequest, db: Session = Depends(get_db)) -> JobR
             # is written, so the task list cannot grow from a rejected link.
             raise ApiError(400, exc.message, exc.code, "job") from exc
         return job_response(row)
+    if request.source.type == "direct":
+        if not request.source.url or not request.source.url.strip():
+            raise ApiError(400, "source.url is required for direct sources", "INVALID_SOURCE", "job")
+        from backend.services import direct_media
+        from backend.services.video_platform import VideoPlatformError
+
+        try:
+            row = direct_media.create_direct_job(
+                db,
+                url=request.source.url,
+                title=request.source.title,
+                author=request.source.author,
+                platform=request.source.platform,
+                page_url=request.source.page_url,
+                options=request.options.model_dump(exclude_none=True),
+            )
+        except VideoPlatformError as exc:
+            # A non-http(s) direct link is a caller mistake: no job row is
+            # written, so the task list cannot grow from a rejected link.
+            raise ApiError(400, exc.message, exc.code, "job") from exc
+        return job_response(row)
     if request.source.type != "file":
         raise ApiError(
             400,
