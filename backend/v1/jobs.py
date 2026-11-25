@@ -83,6 +83,8 @@ def _source_info(row: TranscriptionTask, options: dict) -> JobSourceInfo:
         url=source.get("url"),
         title=source.get("title"),
         author=source.get("author"),
+        platform=source.get("platform"),
+        page_url=source.get("page_url"),
         part=source.get("part"),
         part_title=source.get("part_title"),
         subtitle_language=source.get("subtitle_language"),

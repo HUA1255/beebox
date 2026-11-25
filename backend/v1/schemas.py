@@ -236,6 +236,20 @@ class JobSourceInfo(BaseModel):
     url: str | None = Field(default=None, description="Original video link for type=url")
     title: str | None = Field(default=None, description="Video title for type=url")
     author: str | None = Field(default=None, description="Video author/uploader for type=url")
+    platform: str | None = Field(
+        default=None,
+        description=(
+            "Source platform for type=url (bilibili or youtube); null for file "
+            "sources and when a direct source names none"
+        ),
+    )
+    page_url: str | None = Field(
+        default=None,
+        description=(
+            "Page the media came from, for direct sources; null when the source "
+            "itself is the page (file and video-link jobs)"
+        ),
+    )
     part: int | None = Field(
         default=None,
         description=(

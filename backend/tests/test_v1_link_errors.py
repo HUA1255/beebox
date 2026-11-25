@@ -714,6 +714,55 @@ def test_prefer_asr_allows_a_bilibili_job_without_a_login(
     assert [call["stage"] for call in read_calls(root)] == ["metadata", "audio"]
 
 
+def test_a_url_job_source_reports_its_platform_and_a_null_page_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://www.bilibili.com/video/BV1Source27"
+    client, _ = configure_client(
+        tmp_path, monkeypatch, [fake_video("BV1Source27", url=url)]
+    )
+
+    created = create_url_job(client, url)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["source"]["platform"] == "bilibili"
+    # page_url is reserved for the direct media source (#32).
+    assert body["source"]["page_url"] is None
+
+    finished = wait_for(client, body["id"])
+    assert finished["status"] == "succeeded", finished
+    assert finished["source"]["platform"] == "bilibili"
+    assert finished["source"]["page_url"] is None
+
+
+def test_a_youtube_job_source_reports_the_youtube_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://www.youtube.com/watch?v=BeeBoxSource27"
+    entry = {
+        "platform": "youtube",
+        "id": "BeeBoxSource27",
+        "urls": [url],
+        "title": "YouTube source platform",
+        "duration_seconds": 2.0,
+        "tracks": [
+            {"language": "en", "kind": "manual", "format": "srt", "path": "manual.srt"}
+        ],
+    }
+    client, _ = configure_client(tmp_path, monkeypatch, [entry])
+
+    created = create_url_job(client, url)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["source"]["platform"] == "youtube"
+    assert body["source"]["page_url"] is None
+
+    finished = wait_for(client, body["id"])
+    assert finished["status"] == "succeeded", finished
+    assert finished["source"]["platform"] == "youtube"
+    assert finished["source"]["page_url"] is None
+
+
 def test_youtube_link_is_not_gated_by_the_bilibili_login(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
