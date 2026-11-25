@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 PLATFORM_BILIBILI = "bilibili"
 PLATFORM_YOUTUBE = "youtube"
+# Zhihu publishes single videos as /zvideo/<id> pages (ticket #30).
+PLATFORM_ZHIHU = "zhihu"
 # ``SUPPORTED_PLATFORMS`` is derived from the platform rule table; import it
 # from :mod:`backend.services.video_platform.platforms` (or the package).
 
@@ -124,6 +126,7 @@ __all__ = [
     "LOGIN_VALID",
     "PLATFORM_BILIBILI",
     "PLATFORM_YOUTUBE",
+    "PLATFORM_ZHIHU",
     "TEXT_SOURCE_ASR",
     "TEXT_SOURCE_AUTO",
     "TEXT_SOURCE_MANUAL",

@@ -18,7 +18,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from backend.services.video_platform.models import PLATFORM_BILIBILI, PLATFORM_YOUTUBE
+from backend.services.video_platform.models import (
+    PLATFORM_BILIBILI,
+    PLATFORM_YOUTUBE,
+    PLATFORM_ZHIHU,
+)
 
 
 @dataclass(frozen=True)
@@ -95,6 +99,10 @@ _YOUTUBE_VIDEO_PATH = re.compile(r"^/(?:shorts|embed)/(?P<id>[A-Za-z0-9_-]+)")
 _YOUTUBE_ANY_PATH = re.compile(r".*")
 _YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _YOUTUBE_LIVE_PATH = re.compile(r"^/live(?:/|$)")
+
+# Zhihu's single videos are zvideo pages with a numeric id; answers, articles,
+# columns and questions are different pages and stay unsupported.
+_ZHIHU_VIDEO_PATH = re.compile(r"^/zvideo/(?P<id>[0-9]+)")
 
 
 PLATFORM_RULES: tuple[PlatformRule, ...] = (
@@ -182,6 +190,29 @@ PLATFORM_RULES: tuple[PlatformRule, ...] = (
                 # A /live link is always a stream, even with a video id.
                 reject_path=_YOUTUBE_LIVE_PATH,
                 reject_path_message="Live streams are not supported",
+            ),
+        ),
+    ),
+    PlatformRule(
+        platform=PLATFORM_ZHIHU,
+        capabilities=PlatformCapabilities(
+            # A zvideo page has no platform subtitle tracks: the job always
+            # transcribes the audio (ticket #30).
+            has_platform_subtitles=False,
+            requires_login=False,
+            has_parts=False,
+            has_short_links=False,
+        ),
+        hosts=(
+            HostRule(
+                host="zhihu.com",
+                forms=(
+                    UrlForm(
+                        path=_ZHIHU_VIDEO_PATH,
+                        canonical="https://www.zhihu.com/zvideo/{id}",
+                    ),
+                ),
+                unsupported_message="The Zhihu link does not point to a single zvideo",
             ),
         ),
     ),
