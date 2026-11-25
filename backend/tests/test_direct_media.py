@@ -723,7 +723,9 @@ def test_the_production_transport_sets_trust_env_on_the_session(
             "http": "http://127.0.0.1:3128",
             "https": "http://127.0.0.1:3128",
         },
+        "headers": {"User-Agent": direct_media.USER_AGENT},
     }
+    assert direct_media.USER_AGENT.startswith("BeeBox/")
     assert list(response.iter_bytes()) == [b"media-bytes"]
 
     response.close()

@@ -40,7 +40,7 @@ from urllib.parse import urljoin, urlsplit
 import requests
 from sqlalchemy.orm import Session
 
-from backend import config
+from backend import __version__, config
 from backend.database import session as db_session
 from backend.database.models import TranscriptionTask
 from backend.services import ffmpeg_tools
@@ -66,6 +66,9 @@ from backend.services.video_platform.errors import (
 
 DIRECT_SOURCE_TYPE = "direct"
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
+# Some media hosts reject the default ``python-requests`` user agent with 406;
+# identify the service instead (the short-link expander does the same).
+USER_AGENT = f"BeeBox/{__version__} (direct media)"
 #: How many redirect hops a direct download may follow before it fails.
 MAX_REDIRECTS = 5
 
@@ -202,6 +205,7 @@ class RequestsHttpTransport:
                 allow_redirects=False,
                 timeout=timeout,
                 proxies=proxies,
+                headers={"User-Agent": USER_AGENT},
             )
         except requests.Timeout as exc:
             session.close()
