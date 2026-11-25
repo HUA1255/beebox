@@ -57,7 +57,6 @@ from backend.services.video_platform.models import (
     LOGIN_VALID,
     PLATFORM_BILIBILI,
     PLATFORM_YOUTUBE,
-    SUPPORTED_PLATFORMS,
     TEXT_SOURCE_ASR,
     TEXT_SOURCE_AUTO,
     TEXT_SOURCE_MANUAL,
@@ -70,6 +69,13 @@ from backend.services.video_platform.models import (
     SubtitleTrack,
     VideoInfo,
     VideoRef,
+)
+from backend.services.video_platform.platforms import (
+    PLATFORM_RULES,
+    SUPPORTED_PLATFORMS,
+    PlatformCapabilities,
+    PlatformRule,
+    platform_rule,
 )
 from backend.services.video_platform.subtitles import SUPPORTED_SUBTITLE_FORMATS, parse_subtitle
 from backend.services.video_platform.selection import (
@@ -170,7 +176,10 @@ __all__ = [
     "LOGIN_VALID",
     "PLATFORM_BILIBILI",
     "PLATFORM_REAL",
+    "PLATFORM_RULES",
     "PLATFORM_YOUTUBE",
+    "PlatformCapabilities",
+    "PlatformRule",
     "REASON_AUTO_CHINESE",
     "REASON_AUTO_ORIGINAL",
     "REASON_AUTO_REQUESTED",
@@ -218,6 +227,7 @@ __all__ = [
     "get_video_platform",
     "parse_subtitle",
     "parse_video_url",
+    "platform_rule",
     "video_platform_name",
     "yt_dlp_version",
 ]

@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 
 PLATFORM_BILIBILI = "bilibili"
 PLATFORM_YOUTUBE = "youtube"
-SUPPORTED_PLATFORMS = (PLATFORM_BILIBILI, PLATFORM_YOUTUBE)
+# ``SUPPORTED_PLATFORMS`` is derived from the platform rule table; import it
+# from :mod:`backend.services.video_platform.platforms` (or the package).
 
 TRACK_KIND_MANUAL = "manual"
 TRACK_KIND_AUTO = "auto"
@@ -123,7 +124,6 @@ __all__ = [
     "LOGIN_VALID",
     "PLATFORM_BILIBILI",
     "PLATFORM_YOUTUBE",
-    "SUPPORTED_PLATFORMS",
     "TEXT_SOURCE_ASR",
     "TEXT_SOURCE_AUTO",
     "TEXT_SOURCE_MANUAL",
