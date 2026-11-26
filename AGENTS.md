@@ -36,7 +36,7 @@ gh issue comment 31 --body "验证结果：..."
 gh issue edit 31 --add-label "ready-for-human"
 ```
 
-只在 `HUA1255/beebox` 建 issue。除非用户明确要求，不要 push、不要关闭 issue。
+只在 `HUA1255/beebox` 建 issue。可以把自己的功能分支推到 GitHub 并开草稿 PR（分支名最好带 issue 编号）；推 main、强推、删远程分支、推 tag、发版、合并 PR、关闭 issue 之前，先问用户。
 
 ## 公开仓库与隐私
 
