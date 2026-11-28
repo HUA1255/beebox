@@ -120,6 +120,29 @@ def test_x_post_with_a_requested_subtitle_language_fails_without_falling_back(
     assert read_calls(root) == []
 
 
+def test_x_post_without_video_fails_as_non_retryable_video_not_accessible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ticket #39: a text-only or image-only post has no video to retry."""
+    client, root = configure_client(
+        tmp_path,
+        monkeypatch,
+        [fake_x_post(unavailable="no video")],
+        asr=True,
+    )
+
+    created = create_url_job(client, X_POST_URL)
+    assert created.status_code == 201, created.text
+    finished = wait_for(client, created.json()["id"])
+
+    assert finished["status"] == "failed", finished
+    assert finished["error_code"] == "VIDEO_NOT_ACCESSIBLE", finished
+    assert finished["retryable"] is False, finished
+    assert "no video" in finished["error"], finished
+    # The metadata fetch is the first request and already failed.
+    assert [call["stage"] for call in read_calls(root)] == ["metadata"]
+
+
 @pytest.mark.parametrize(
     "url",
     [

@@ -86,6 +86,9 @@ NON_RETRYABLE_ERROR_CODES = frozenset(
         # FILE_TOO_LARGE is deliberately retryable: the spec does not call an
         # oversized response permanent, and a caller can retry with a smaller
         # file or a direct link that now serves less data.
+        # Ticket #39: a private, removed, region-locked or video-less target
+        # (for example a text-only X post) cannot be fixed by retrying it.
+        "VIDEO_NOT_ACCESSIBLE",
         # Ticket #44 turns a subtitle-less video into the audio/ASR path; a
         # caller-specified language with no matching track cannot succeed on
         # retry either.
