@@ -10,7 +10,7 @@ dependencies = [
     "sqlalchemy>=2.0.51",
     "python-multipart>=0.0.32",
     "requests>=2.34.2",
-    "yt-dlp==2026.10.26",
+    "yt-dlp==2026.11.23",
     "bgutil-ytdlp-pot-provider==2.0.2",
     # QR login for Bilibili; pinned because the upstream project is archived
     # and will not receive compatibility fixes (ADR-0012). GPL-3.0.
