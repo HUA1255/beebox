@@ -460,6 +460,7 @@ def test_create_job_validation_errors_use_unified_shape(client: TestClient) -> N
         ("failed", 100, "failed", "failed", 1.0, "MODEL_LOAD_FAILED", True),
         ("failed_resumable", 100, "failed", "failed", 1.0, "CHUNK_FAILED", True),
         ("failed", 100, "failed", "failed", 1.0, "LOCAL_TOOL_MISSING", False),
+        ("failed", 100, "failed", "failed", 1.0, "VIDEO_NOT_ACCESSIBLE", False),
         ("interrupted", 100, "failed", "failed", 1.0, "TASK_INTERRUPTED", True),
         ("cancelled", 100, "cancelled", "cancelled", 1.0, "TASK_CANCELLED", False),
     ],
