@@ -1480,6 +1480,11 @@ def _apply_speaker_labels_and_postprocess(
                 "speakers": sorted({segment.speaker for segment in segments if segment.speaker}),
                 "segments": len(segments),
                 "cross_speaker_segments": diarization_stats.get("cross_speaker_segments"),
+                # Ticket #36: a clip without speaker turns is labelled as one
+                # speaker; the stage log makes that fallback explicit.
+                "single_speaker_fallback": bool(
+                    diarization_stats.get("single_speaker_fallback")
+                ),
             },
         )
     mode = options.get("postprocess_mode", "safe")
