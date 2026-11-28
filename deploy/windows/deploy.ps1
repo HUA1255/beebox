@@ -26,7 +26,7 @@
     printed. The script never downloads models.
 
 .PARAMETER Tag
-    Git tag to deploy, for example v1.0.3.
+    Git tag to deploy, for example v1.0.4.
 
 .PARAMETER Root
     Fixed install root. Default C:\BeeBox.
@@ -49,13 +49,13 @@
     layout, which makes it safe for CI.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.3
+    powershell -ExecutionPolicy Bypass -File .\deploy\windows\deploy.ps1 -Tag v1.0.4
 
 .EXAMPLE
-    .\deploy\windows\deploy.ps1 -Tag v1.0.3 -Root D:\BeeBox -IssueNumber 54
+    .\deploy\windows\deploy.ps1 -Tag v1.0.4 -Root D:\BeeBox -IssueNumber 54
 
 .EXAMPLE
-    .\deploy\windows\deploy.ps1 -Tag v1.0.3 -DryRun
+    .\deploy\windows\deploy.ps1 -Tag v1.0.4 -DryRun
 #>
 [CmdletBinding()]
 param(
