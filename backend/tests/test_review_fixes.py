@@ -16,6 +16,7 @@ import pytest
 from backend import config
 from backend.database import session as db_session
 from backend.database.models import (
+    TaskLog,
     TranscriptSegment as DBSegment,
     TranscriptionChunk,
     TranscriptionTask,
@@ -179,6 +180,79 @@ def test_diarization_cross_speaker_stats_land_in_the_options_summary(
         assert summary["cross_speaker_details"][0]["speaker"] == "1"
     finally:
         session.close()
+
+
+def test_a_clip_without_speaker_turns_succeeds_as_one_speaker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ticket #36: default diarization on an 8 s clip must not fail the job."""
+    import numpy as np
+    import soundfile as sf
+
+    from backend.services import diarization as diarization_service
+
+    audio = tmp_path / "short-clip.wav"
+    sf.write(str(audio), np.zeros(129_600, dtype=np.float32), 16_000)
+    model_dir = tmp_path / "pyannote-community-1"
+    model_dir.mkdir()
+    (model_dir / "config.yaml").write_text("pipeline: {}\n", encoding="utf-8")
+
+    class _EmptyAnnotation:
+        def itertracks(self, yield_label: bool = False):
+            return iter(())
+
+    class _EmptyPipeline:
+        def __call__(self, audio, **kwargs):
+            return SimpleNamespace(speaker_diarization=_EmptyAnnotation())
+
+    monkeypatch.setenv("BEEBOX_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("BEEBOX_SPEECH_ENGINE", "local")
+    monkeypatch.setattr(
+        diarization_service, "diarization_model_dir", lambda model_name=None: model_dir
+    )
+    monkeypatch.setattr(
+        diarization_service, "_load_pipeline", lambda directory: _EmptyPipeline()
+    )
+    diarization_service.unload_pipeline()
+    db_session.init_db()
+    session = db()
+    try:
+        row = _seed_task(
+            session,
+            task_id="short-clip-diarization",
+            status="completed",
+            options={"_source_kind": "direct"},
+        )
+        # No diarization option: the service falls back to settings.diarization.
+        options: dict = {}
+
+        segments, _mode, diarized = task_service._apply_speaker_labels_and_postprocess(
+            session,
+            row,
+            [TranscriptSegment(id=1, start=0.0, end=0.4, text="哎。")],
+            options=options,
+            settings=SimpleNamespace(diarization=True),
+            normalized_path=audio,
+            aligned=True,
+        )
+
+        assert diarized is True
+        assert [segment.speaker for segment in segments] == ["1"]
+        summary = options["raw_result_summary"]
+        assert summary["single_speaker_fallback"] is True
+        log = (
+            session.query(TaskLog)
+            .filter(
+                TaskLog.task_id == row.id,
+                TaskLog.message == "Speaker diarization completed",
+            )
+            .one()
+        )
+        assert json.loads(log.data_json)["single_speaker_fallback"] is True
+    finally:
+        session.close()
+        diarization_service.unload_pipeline()
 
 
 def test_chunk_retry_merge_keeps_cross_speaker_stats_in_the_persisted_summary(

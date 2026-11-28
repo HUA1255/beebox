@@ -489,17 +489,29 @@ def test_apply_diarization_fails_when_the_model_directory_is_missing(tmp_path, m
     assert "not available" in excinfo.value.message
 
 
-def test_apply_diarization_fails_when_no_turns_are_returned(tmp_path, monkeypatch) -> None:
-    audio_path = tmp_path / "meeting.wav"
-    _write_wav(audio_path)
+def test_apply_diarization_labels_a_clip_without_turns_as_one_speaker(
+    tmp_path, monkeypatch
+) -> None:
+    """Ticket #36: a short clip whose pipeline finds no turn still succeeds."""
+    audio_path = tmp_path / "short-clip.wav"
+    # 8.1 s: the reported shape of the direct-link clip with no speaker turns.
+    _write_wav(audio_path, samples=129_600, sample_rate=16_000)
     _fake_diarization(monkeypatch, tmp_path, _FakePipeline([]))
+    segments = [
+        _segment(1, 0.0, 0.4, "哎。"),
+        _segment(2, 0.4, 0.9, "嗯。"),
+    ]
+    stats: dict = {}
 
-    with pytest.raises(BeeBoxError) as excinfo:
-        apply_diarization(str(audio_path), [_segment(1, 0.0, 1.0)])
+    assigned = apply_diarization(str(audio_path), segments, stats=stats)
 
-    assert excinfo.value.code == "DIARIZATION_FAILED"
-    assert excinfo.value.stage == "diarize"
-    assert "no speaker turns" in excinfo.value.message
+    assert [segment.speaker for segment in assigned] == ["1", "1"]
+    assert [(segment.id, segment.text, segment.start, segment.end) for segment in assigned] == [
+        (1, "哎。", 0.0, 0.4),
+        (2, "嗯。", 0.4, 0.9),
+    ]
+    assert stats["single_speaker_fallback"] is True
+    assert stats["cross_speaker_segments"] == 0
 
 
 def test_apply_diarization_wraps_inference_errors(tmp_path, monkeypatch) -> None:

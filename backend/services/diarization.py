@@ -13,6 +13,10 @@ from backend.services.postprocess import join_text
 
 DIARIZATION_MODEL_NAME = "pyannote-community-1"
 
+# A clip too short or too quiet for pyannote to find a turn is still labelled:
+# one speaker is the truthful fallback when there is nobody to separate.
+SINGLE_SPEAKER_LABEL = "1"
+
 # A segment that sits in a diarization gap is only filled from the nearest turn
 # when that turn is close enough for the assignment to be defensible.
 DEFAULT_GAP_FILL_SECONDS = 0.5
@@ -464,7 +468,10 @@ def apply_diarization(
     The pipeline is loaded from the local preseeded directory (no token or
     network) and invoked with an in-memory waveform. Any load, decode or
     inference failure raises ``BeeBoxError("DIARIZATION_FAILED")``: a
-    transcript without speakers must never be stored silently.
+    transcript without speakers must never be stored silently. A clip whose
+    pipeline returns no usable speaker turn (common for very short audio) is
+    not a failure: every segment is labelled ``"1"`` and ``stats`` records
+    ``single_speaker_fallback``.
 
     When ``stats`` is given it is filled in place with the cross-speaker segment
     measurement. Both the segments and the turns are only available here, so
@@ -502,13 +509,21 @@ def apply_diarization(
             f"Speaker diarization failed: {type(exc).__name__}: {exc}",
             stage="diarize",
         ) from exc
-    if not turns:
-        raise BeeBoxError(
-            "DIARIZATION_FAILED",
-            "Speaker diarization produced no speaker turns",
-            stage="diarize",
-        )
     smoothed_turns = smooth_turns(turns)
+    if not smoothed_turns:
+        # Ticket #36: ASR can succeed on a clip too short or too quiet for
+        # pyannote to find a turn. A requested diarization must neither fail
+        # the job nor silently drop the labels, so the clip becomes one
+        # speaker. Text, ids and timestamps are kept exactly as ASR produced
+        # them; smoothing would merge segments and rewrite those times.
+        fallback = [
+            segment.model_copy(update={"speaker": SINGLE_SPEAKER_LABEL})
+            for segment in segments
+        ]
+        if stats is not None:
+            stats.update(count_cross_speaker_segments(fallback, []))
+            stats["single_speaker_fallback"] = True
+        return fallback
     assigned = assign_speakers(segments, smoothed_turns)
     smoothed = smooth_speaker_segments(assigned)
     renumbered = renumber_speakers(smoothed)
