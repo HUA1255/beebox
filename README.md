@@ -10,7 +10,7 @@
 录音、视频文件、B 站 / YouTube 链接，进去的是声音，出来的是带字符级时间戳、说话人和自然段落的转写稿。<br>
 一块消费级显卡就能跑，模型和数据都留在你自己的机器上。
 
-<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.3-blue?style=flat-square" alt="version"> <img src="https://img.shields.io/badge/platform-Windows_11_·_NVIDIA-555?style=flat-square" alt="platform"></p>
+<p><a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="license"></a> <img src="https://img.shields.io/badge/stack-FastAPI_·_PyTorch-0b84fe?style=flat-square" alt="stack"> <img src="https://img.shields.io/badge/version-1.0.4-blue?style=flat-square" alt="version"> <img src="https://img.shields.io/badge/platform-Windows_11_·_NVIDIA-555?style=flat-square" alt="platform"></p>
 
 <p><a href="README.en.md">English</a> · <a href="#快速上手">快速上手</a> · <a href="#ai-agent-部署指南">AI Agent 部署</a> · <a href="docs/history.md">修复与决策历史</a> · <a href="CHANGELOG.md">更新日志</a></p>
 
@@ -147,7 +147,7 @@ $tag = git describe --tags --abbrev=0
 git checkout $tag
 ```
 
-检查：`git status` 干净，`$tag` 形如 `v1.0.3`。
+检查：`git status` 干净，`$tag` 形如 `v1.0.4`。
 
 **3. 准备外部工具和模型**
 

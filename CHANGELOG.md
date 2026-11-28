@@ -4,6 +4,13 @@ All notable BeeBox changes are documented here. The format follows Keep a Change
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-28
+
+### Fixed
+
+- 媒体直链与短音频：diarization 返回空 turns 时不再让任务失败，整段按单说话人输出，`single_speaker_fallback` 写入结果摘要与阶段日志；模型加载、解码和推理失败仍然报 `DIARIZATION_FAILED`（refs #36）。
+- X 纯文字或纯图片帖子没有视频可下载时，任务改为不可重试的 `VIDEO_NOT_ACCESSIBLE`，不再伪装成可重试的 `DOWNLOAD_NETWORK_ERROR`；`VIDEO_NOT_ACCESSIBLE` 同时加入全局不可重试集合，private/removed/region-locked/paid 也不再自动重试（refs #39）。
+
 ## [1.0.3] - 2026-11-26
 
 ### Added
@@ -422,7 +429,8 @@ BeeBox 首个上线版本：只提供 `/v1` 接口，以 Windows 原生服务部
 - The macOS package is not signed or notarized.
 - Windows and Linux packages are not published.
 
-[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/HUA1255/beebox/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/HUA1255/beebox/releases/tag/v1.0.4
 [1.0.3]: https://github.com/HUA1255/beebox/releases/tag/v1.0.3
 [1.0.2]: https://github.com/HUA1255/beebox/releases/tag/v1.0.2
 [1.0.1]: https://github.com/HUA1255/beebox/releases/tag/v1.0.1
