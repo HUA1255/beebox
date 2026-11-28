@@ -144,6 +144,13 @@ def returning(payload: dict) -> type:
             VideoUnavailableError,
             "VIDEO_NOT_ACCESSIBLE",
         ),
+        # Ticket #39: a text-only or image-only X post has no video to fetch;
+        # retrying cannot make one appear.
+        (
+            "No video could be found in this tweet",
+            VideoUnavailableError,
+            "VIDEO_NOT_ACCESSIBLE",
+        ),
         ("HTTP Error 404: Not Found", VideoUnavailableError, "VIDEO_NOT_ACCESSIBLE"),
         ("Unsupported URL: https://example.com/nope", UnsupportedUrlError, "UNSUPPORTED_URL"),
         ("'nope' is not a valid URL", InvalidUrlError, "INVALID_URL"),
@@ -210,6 +217,22 @@ def test_yt_dlp_live_metadata_is_unsupported(monkeypatch: pytest.MonkeyPatch) ->
         platform.fetch_video_info(
             parse_video_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         )
+
+
+def test_an_x_post_with_video_still_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ticket #39: only the no-video failure changes; a video post is unaffected."""
+    install(
+        monkeypatch,
+        returning({"title": "Sample X post", "duration": 1.5, "subtitles": {}}),
+    )
+    platform = YtDlpVideoPlatform()
+
+    info = platform.fetch_video_info(
+        parse_video_url("https://x.com/BeeBoxTest/status/1234567890123456789")
+    )
+
+    assert info.title == "Sample X post"
+    assert info.duration_ms == 1500
 
 
 def test_yt_dlp_bilibili_multi_part_playlist_keeps_only_the_selected_part(

@@ -259,6 +259,10 @@ def _classify_download_error(
             "forbidden",
             "http error 403",
             "404",
+            # Ticket #39: the X extractor raises this for a text-only or
+            # image-only post. There is no video to fetch, so a retry cannot
+            # succeed; it is an unavailability, not a transport failure.
+            "no video could be found in this tweet",
             "大会员",
             "地区",
             "区域",
